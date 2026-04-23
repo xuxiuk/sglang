@@ -125,6 +125,8 @@ from sglang.srt.managers.io_struct import (
     ResumeMemoryOccupationReqInput,
     RpcReqInput,
     RpcReqOutput,
+    SaveCSDTableReqInput,
+    SaveCSDTableReqOutput,
     SendWeightsToRemoteInstanceReqInput,
     SendWeightsToRemoteInstanceReqOutput,
     SetInternalStateReq,
@@ -701,6 +703,17 @@ class Scheduler(
                 self.page_size, self.max_total_num_tokens // self.page_size
             )
 
+    def save_csd_table(self, path: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+        if self.tp_rank != 0 or self.dp_rank not in (None, 0):
+            return
+        if self.spec_algorithm.is_none():
+            raise ValueError("CSD table export requires speculative decoding.")
+        save_csd_table = getattr(self.draft_worker, "save_csd_table", None)
+        if save_csd_table is None:
+            raise ValueError("The current speculative worker does not support CSD table export.")
+        if not save_csd_table(path, metadata):
+            raise ValueError("CSD is not enabled, so no CSD table was saved.")
+
     def init_cache_with_memory_pool(self):
         server_args = self.server_args
         uses_transformers_backend = (
@@ -1241,6 +1254,7 @@ class Scheduler(
                 (FreezeGCReq, self.handle_freeze_gc),
                 (GetInternalStateReq, self.get_internal_state),
                 (SetInternalStateReq, self.set_internal_state),
+                (SaveCSDTableReqInput, self.handle_save_csd_table),
                 (RpcReqInput, self.handle_rpc_request),
                 (ExpertDistributionReq, self.expert_distribution_handle),
                 (LoadLoRAAdapterReqInput, self.load_lora_adapter),
@@ -3130,6 +3144,14 @@ class Scheduler(
             updated=True,
             server_args=vars(get_global_server_args()),
         )
+
+    def handle_save_csd_table(self, recv_req: SaveCSDTableReqInput):
+        try:
+            self.save_csd_table(recv_req.path, recv_req.metadata)
+            return SaveCSDTableReqOutput(success=True, message="")
+        except Exception as e:
+            logger.error(f"Failed to save CSD table: {str(e)}")
+            return SaveCSDTableReqOutput(success=False, message=str(e))
 
     def handle_rpc_request(self, recv_req: RpcReqInput):
         # Handle RPC requests

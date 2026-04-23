@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
@@ -31,6 +31,7 @@ from sglang.srt.model_executor.forward_batch_info import (
 )
 from sglang.srt.server_args import ServerArgs
 from sglang.srt.speculative.draft_utils import DraftBackendFactory
+from sglang.srt.speculative.csd_runtime import CSDRuntime
 from sglang.srt.speculative.eagle_draft_cuda_graph_runner import (
     EAGLEDraftCudaGraphRunner,
 )
@@ -102,6 +103,7 @@ class EAGLEWorker(TpModelWorker):
         self.speculative_algorithm = SpeculativeAlgorithm.from_string(
             server_args.speculative_algorithm
         )
+        self.csd_runtime = CSDRuntime.from_server_args(server_args, self.device)
 
         # Override the context length of the draft model to be the same as the target model.
         server_args.context_length = target_worker.model_runner.model_config.context_len
@@ -702,6 +704,20 @@ class EAGLEWorker(TpModelWorker):
     def clear_cache_pool(self):
         # allocator and kv cache pool are shared with target worker
         pass
+
+    def save_csd_table(self, path: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
+        if not self.csd_runtime.enabled:
+            return False
+        if metadata:
+            self.csd_runtime.table_store.metadata.update(metadata)
+        self.csd_runtime.table_store.metadata.update(
+            {
+                "tp_rank": self.tp_rank,
+                "tp_size": self.server_args.tp_size,
+            }
+        )
+        self.csd_runtime.save_table(path)
+        return True
 
     def verify(self, batch: ScheduleBatch, spec_info: EagleVerifyInput):
         seq_lens_pre_verify = batch.seq_lens.clone()

@@ -66,6 +66,8 @@ from sglang.srt.managers.io_struct import (
     ReleaseMemoryOccupationReqOutput,
     ResumeMemoryOccupationReqInput,
     ResumeMemoryOccupationReqOutput,
+    SaveCSDTableReqInput,
+    SaveCSDTableReqOutput,
     SendWeightsToRemoteInstanceReqInput,
     SendWeightsToRemoteInstanceReqOutput,
     SetInternalStateReq,
@@ -238,6 +240,9 @@ class TokenizerCommunicatorMixin:
         self.dumper_control_communicator = _Communicator(
             self.send_to_scheduler, server_args.dp_size
         )
+        self.save_csd_table_communicator = _Communicator(
+            self.send_to_scheduler, server_args.dp_size
+        )
 
         self._result_dispatcher += self._get_communicator_dispatcher()
 
@@ -339,6 +344,10 @@ class TokenizerCommunicatorMixin:
                 (
                     DumperControlReqOutput,
                     self.dumper_control_communicator.handle_recv,
+                ),
+                (
+                    SaveCSDTableReqOutput,
+                    self.save_csd_table_communicator.handle_recv,
                 ),
             ]
         )
@@ -885,6 +894,15 @@ class TokenizerCommunicatorMixin:
     ) -> List[DumperControlReqOutput]:
         self.auto_create_handle_loop()
         return await self.dumper_control_communicator(obj)
+
+    async def save_csd_table(
+        self: TokenizerManager,
+        obj: SaveCSDTableReqInput,
+        request: Optional[fastapi.Request] = None,
+    ) -> Tuple[bool, str]:
+        self.auto_create_handle_loop()
+        results = await self.save_csd_table_communicator(obj)
+        return _Communicator.merge_results(results)
 
     async def get_load(self: TokenizerManager) -> List[GetLoadReqOutput]:
         self.auto_create_handle_loop()

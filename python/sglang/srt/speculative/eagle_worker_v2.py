@@ -1,7 +1,7 @@
 import contextlib
 import logging
 import time
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
@@ -30,6 +30,7 @@ from sglang.srt.managers.tp_worker import TpModelWorker
 from sglang.srt.model_executor.forward_batch_info import CaptureHiddenMode, ForwardBatch
 from sglang.srt.server_args import ServerArgs
 from sglang.srt.speculative.base_spec_worker import BaseDraftWorker, BaseSpecWorker
+from sglang.srt.speculative.csd_runtime import CSDRuntime
 from sglang.srt.speculative.draft_utils import DraftBackendFactory
 from sglang.srt.speculative.eagle_draft_cuda_graph_runner import (
     EAGLEDraftCudaGraphRunner,
@@ -647,6 +648,7 @@ class EAGLEWorkerV2(BaseSpecWorker):
         self.speculative_algorithm = SpeculativeAlgorithm.from_string(
             server_args.speculative_algorithm
         )
+        self.csd_runtime = CSDRuntime.from_server_args(server_args, self.device)
 
         self.req_to_token_pool, self.token_to_kv_pool_allocator = (
             target_worker.get_memory_pool()
@@ -686,6 +688,20 @@ class EAGLEWorkerV2(BaseSpecWorker):
     def clear_cache_pool(self):
         # allocator and kv cache pool are shared with target worker, which are cleared in scheduler
         pass
+
+    def save_csd_table(self, path: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
+        if not self.csd_runtime.enabled:
+            return False
+        if metadata:
+            self.csd_runtime.table_store.metadata.update(metadata)
+        self.csd_runtime.table_store.metadata.update(
+            {
+                "tp_rank": self.tp_rank,
+                "tp_size": self.server_args.tp_size,
+            }
+        )
+        self.csd_runtime.save_table(path)
+        return True
 
     def forward_batch_generation(self, model_worker_batch: ModelWorkerBatch):
         if (

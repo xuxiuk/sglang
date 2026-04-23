@@ -1655,6 +1655,18 @@ class VertexGenerateReqInput(BaseReq):
 
 
 @dataclass
+class SaveCSDTableReqInput(BaseReq):
+    path: str
+    metadata: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class SaveCSDTableReqOutput(BaseReq):
+    success: bool
+    message: str
+
+
+@dataclass
 class RpcReqInput(BaseReq):
     method: str
     parameters: Optional[Dict] = None
