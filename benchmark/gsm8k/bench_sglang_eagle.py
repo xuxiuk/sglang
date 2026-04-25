@@ -4,8 +4,10 @@ import json
 import os
 import re
 import time
+from pathlib import Path
 
 import numpy as np
+import requests
 from datasets import load_dataset
 
 import sglang as sgl
@@ -18,6 +20,116 @@ from sglang.test.test_utils import (
 from sglang.utils import download_and_cache_file, dump_state_text, read_jsonl
 
 INVALID = -9999999
+
+
+def _safe_filename_part(value):
+    if value is None:
+        return "none"
+    value = str(value).strip()
+    if not value:
+        return "none"
+    value = value.rstrip("/").split("/")[-1]
+    value = re.sub(r"[^A-Za-z0-9._-]+", "-", value)
+    return value.strip("-_") or "none"
+
+
+def _dataset_name(args):
+    if args.dataset_name:
+        return args.dataset_name
+    return "gsm8k-platinum" if args.platinum else "gsm8k"
+
+
+def _draft_model_name(args):
+    return args.draft_model_name or "mtp"
+
+
+def _csd_config(args):
+    return {
+        "enabled": args.csd_enabled,
+        "dynamic_update": args.csd_dynamic_update,
+        "force_accept_disabled": args.csd_force_accept_disabled,
+        "table_path": args.csd_table_path,
+        "freq_threshold": args.csd_freq_threshold,
+        "prob_ratio": args.csd_prob_ratio,
+        "save_table_path": args.csd_save_table_path,
+    }
+
+
+def _speculative_config(args):
+    return {
+        "algorithm": args.speculative_algorithm,
+        "num_steps": args.speculative_num_steps,
+        "eagle_topk": args.speculative_eagle_topk,
+        "num_draft_tokens": args.speculative_num_draft_tokens,
+    }
+
+
+def _default_csd_table_path(args):
+    parts = [
+        "csd",
+        _dataset_name(args),
+        f"n{args.num_questions}",
+        _safe_filename_part(args.model_name),
+        _safe_filename_part(_draft_model_name(args)),
+        f"temp{args.temperature:g}",
+        f"top_p{args.top_p:g}",
+    ]
+    if args.run_tag:
+        parts.append(args.run_tag)
+    return str(Path(args.csd_save_dir) / ("_".join(_safe_filename_part(part) for part in parts) + ".json"))
+
+
+def _run_metadata(args, latency, acc, invalid, output_throughput, accept_length, spec_success_rate, num_verify_ct, csd_metrics):
+    return {
+        "task": "gsm8k-platinum-eagle" if args.platinum else "gsm8k-eagle",
+        "dataset": _dataset_name(args),
+        "dataset_path": args.data_path,
+        "num_questions": args.num_questions,
+        "num_shots": args.num_shots,
+        "max_new_tokens": args.max_new_tokens,
+        "temperature": args.temperature,
+        "top_p": args.top_p,
+        "parallel": args.parallel,
+        "backend": args.backend,
+        "host": args.host,
+        "port": args.port,
+        "model": args.model_name,
+        "draft_model": _draft_model_name(args),
+        "speculative": _speculative_config(args),
+        "run_tag": args.run_tag,
+        "csd": _csd_config(args),
+        "latency": round(latency, 3),
+        "accuracy": round(float(acc), 3),
+        "invalid": round(float(invalid), 3),
+        "throughput": round(output_throughput, 3),
+        "accept_length": round(accept_length, 3),
+        "spec_success_rate": round(spec_success_rate, 6),
+        "spec_verify_ct": int(num_verify_ct),
+        "csd_forced_accept_ct": int(csd_metrics["forced_accept"]),
+        "csd_lookup_hit_ct": int(csd_metrics["lookup_hit"]),
+        "csd_delta_pair_ct": int(csd_metrics["delta_pair"]),
+    }
+
+
+def _save_csd_table(args, metadata):
+    if not args.csd_save_table_path:
+        if not args.csd_auto_save_table:
+            return
+        args.csd_save_table_path = _default_csd_table_path(args)
+
+    Path(args.csd_save_table_path).parent.mkdir(parents=True, exist_ok=True)
+    metadata["csd"]["save_table_path"] = args.csd_save_table_path
+
+    response = requests.post(
+        f"http://{args.host}:{args.port}/save_csd_table",
+        json={"path": args.csd_save_table_path, "metadata": metadata},
+        timeout=args.csd_save_timeout,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not payload.get("success", False):
+        raise RuntimeError(payload.get("message", "failed to save CSD table"))
+    print(f"Saved CSD table to {args.csd_save_table_path}")
 
 
 def get_one_example(lines, i, include_answer):
@@ -36,13 +148,24 @@ def get_few_shot_examples(lines, k):
 
 def get_answer_value(answer_str):
     answer_str = answer_str.replace(",", "")
-    numbers = re.findall(r"\d+", answer_str)
+    if "####" in answer_str:
+        final_answer = answer_str.split("####")[-1]
+        numbers = re.findall(r"-?\d+(?:\.\d+)?", final_answer)
+        if numbers:
+            return _parse_answer_number(numbers[0])
+
+    numbers = re.findall(r"-?\d+(?:\.\d+)?", answer_str)
     if len(numbers) < 1:
         return INVALID
+    return _parse_answer_number(numbers[-1])
+
+
+def _parse_answer_number(value):
     try:
-        return ast.literal_eval(numbers[-1])
-    except SyntaxError:
+        value = ast.literal_eval(value)
+    except (SyntaxError, ValueError):
         return INVALID
+    return int(value) if isinstance(value, float) and value.is_integer() else value
 
 
 @sgl.function
@@ -140,9 +263,15 @@ def main(args):
             state.get_meta_info("answer").get("spec_verify_ct", 0) for state in states
         )
         accept_length = num_output_tokens / num_verify_ct if num_verify_ct > 0 else 1.0
+        spec_success_rate = (
+            (num_output_tokens - num_verify_ct) / num_output_tokens
+            if num_output_tokens > 0
+            else 0.0
+        )
     else:
         num_verify_ct = 0
         accept_length = 1.0
+        spec_success_rate = 0.0
 
     csd_forced_accept_ct = sum(
         state.get_meta_info("answer").get("csd_forced_accept_ct", 0) for state in states
@@ -154,12 +283,30 @@ def main(args):
         state.get_meta_info("answer").get("csd_delta_pair_ct", 0) for state in states
     )
 
+    csd_metrics = {
+        "forced_accept": csd_forced_accept_ct,
+        "lookup_hit": csd_lookup_hit_ct,
+        "delta_pair": csd_delta_pair_ct,
+    }
+    metadata = _run_metadata(
+        args,
+        latency,
+        acc,
+        invalid,
+        output_throughput,
+        accept_length,
+        spec_success_rate,
+        num_verify_ct,
+        csd_metrics,
+    )
+
     # Print results
     print(f"Accuracy: {acc:.3f}")
     print(f"Invalid: {invalid:.3f}")
     print(f"Latency: {latency:.3f} s")
     print(f"Output throughput: {output_throughput:.3f} token/s")
     print(f"Acceptance length: {accept_length:.3f}")
+    print(f"Speculative success rate: {spec_success_rate:.3f}")
     if args.csd_log_result:
         print(
             "CSD forced_accept: {forced}, lookup_hit: {lookup}, delta_pairs: {delta}".format(
@@ -170,37 +317,32 @@ def main(args):
         )
 
     # Dump results
-    dump_state_text(args.answer_file or f"tmp_output_{args.backend}.txt", states)
+    answer_file = args.answer_file or f"tmp_output_{args.backend}.txt"
+    with open(answer_file, "w") as fout:
+        fout.write("# " + json.dumps({"metadata": metadata}) + "\n")
+    dump_state_text(answer_file, states, mode="a")
     dump_bench_raw_result(
         path=args.raw_result_file,
         states=states,
         preds=preds,
         labels=labels,
     )
+    _save_csd_table(args, metadata)
 
     with open(args.result_file, "a") as fout:
         value = {
-            "task": "gsm8k-platinum-eagle" if args.platinum else "gsm8k-eagle",
+            "task": metadata["task"],
             "backend": args.backend,
             "num_gpus": 1,
-            "latency": round(latency, 3),
-            "accuracy": round(float(acc), 3),
-            "invalid": round(float(invalid), 3),
-            "throughput": round(output_throughput, 3),
-            "accept_length": round(accept_length, 3),
-            "spec_verify_ct": int(num_verify_ct),
+            "latency": metadata["latency"],
+            "accuracy": metadata["accuracy"],
+            "invalid": metadata["invalid"],
+            "throughput": metadata["throughput"],
+            "accept_length": metadata["accept_length"],
+            "spec_success_rate": metadata["spec_success_rate"],
+            "spec_verify_ct": metadata["spec_verify_ct"],
             "num_requests": args.num_questions,
-            "other": {
-                "num_questions": args.num_questions,
-                "parallel": args.parallel,
-                "num_shots": args.num_shots,
-                "max_new_tokens": args.max_new_tokens,
-                "temperature": args.temperature,
-                "top_p": args.top_p,
-                "csd_forced_accept_ct": int(csd_forced_accept_ct),
-                "csd_lookup_hit_ct": int(csd_lookup_hit_ct),
-                "csd_delta_pair_ct": int(csd_delta_pair_ct),
-            },
+            "other": metadata,
         }
         fout.write(json.dumps(value) + "\n")
 
@@ -239,6 +381,110 @@ if __name__ == "__main__":
         "--csd-log-result",
         action="store_true",
         help="Print CSD-related counters from response metadata when available",
+    )
+    parser.add_argument(
+        "--dataset-name",
+        type=str,
+        default=None,
+        help="Dataset name stored in benchmark metadata.",
+    )
+    parser.add_argument(
+        "--model-name",
+        type=str,
+        default=None,
+        help="Target model name/path stored in benchmark metadata.",
+    )
+    parser.add_argument(
+        "--draft-model-name",
+        type=str,
+        default=None,
+        help="Draft model name/path stored in benchmark metadata.",
+    )
+    parser.add_argument(
+        "--run-tag",
+        type=str,
+        default=None,
+        help="Optional run tag stored in benchmark metadata.",
+    )
+    parser.add_argument(
+        "--speculative-algorithm",
+        type=str,
+        default="EAGLE",
+        help="Speculative algorithm used by the connected server, stored in metadata.",
+    )
+    parser.add_argument(
+        "--speculative-num-steps",
+        type=int,
+        default=None,
+        help="Server-side speculative num steps, stored in metadata and auto CSD table names.",
+    )
+    parser.add_argument(
+        "--speculative-eagle-topk",
+        type=int,
+        default=None,
+        help="Server-side EAGLE top-k, stored in metadata and auto CSD table names.",
+    )
+    parser.add_argument(
+        "--speculative-num-draft-tokens",
+        type=int,
+        default=None,
+        help="Server-side speculative draft token count, stored in metadata and auto CSD table names.",
+    )
+    parser.add_argument(
+        "--csd-enabled",
+        action="store_true",
+        help="Record that the connected server has CSD enabled for this run.",
+    )
+    parser.add_argument(
+        "--csd-dynamic-update",
+        action="store_true",
+        help="Record that the connected server has CSD dynamic update enabled.",
+    )
+    parser.add_argument(
+        "--csd-force-accept-disabled",
+        action="store_true",
+        help="Record that CSD force accept is disabled on the connected server.",
+    )
+    parser.add_argument(
+        "--csd-table-path",
+        type=str,
+        default=None,
+        help="CSD table path loaded by the connected server, stored in benchmark metadata.",
+    )
+    parser.add_argument(
+        "--csd-freq-threshold",
+        type=int,
+        default=None,
+        help="CSD frequency threshold used by the connected server, stored in benchmark metadata.",
+    )
+    parser.add_argument(
+        "--csd-prob-ratio",
+        type=float,
+        default=None,
+        help="CSD probability ratio used by the connected server, stored in benchmark metadata.",
+    )
+    parser.add_argument(
+        "--csd-save-table-path",
+        type=str,
+        default=None,
+        help="Optional path passed to /save_csd_table after the benchmark finishes.",
+    )
+    parser.add_argument(
+        "--csd-auto-save-table",
+        action="store_true",
+        help="Automatically derive a metadata-rich CSD table filename when --csd-save-table-path is not set.",
+    )
+    parser.add_argument(
+        "--csd-save-dir",
+        type=str,
+        default="benchmark/gsm8k/csd_runs",
+        help="Directory used by --csd-auto-save-table.",
+    )
+    parser.add_argument(
+        "--csd-save-timeout",
+        type=float,
+        default=120.0,
+        help="Timeout in seconds for the /save_csd_table request.",
     )
     args = add_common_sglang_args_and_parse(parser)
     main(args)
