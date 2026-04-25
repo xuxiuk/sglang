@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import torch
 import torch.nn.functional as F
@@ -24,6 +25,7 @@ from sglang.srt.model_executor.forward_batch_info import (
 )
 from sglang.srt.model_executor.model_runner import ModelRunner
 from sglang.srt.server_args import get_global_server_args
+from sglang.srt.speculative.csd_runtime import CSDRuntime
 from sglang.srt.speculative.eagle_utils import verify_tree_greedy_func
 from sglang.srt.speculative.spec_utils import (
     SIMULATE_ACC_LEN,
@@ -272,6 +274,7 @@ class EagleVerifyInputV2Mixin:
         batch: ModelWorkerBatch,
         logits_output: LogitsProcessorOutput,
         vocab_mask: torch.Tensor = None,
+        csd_runtime: Optional[CSDRuntime] = None,
     ):
         """
         Verify and find accepted tokens based on logits output and batch
@@ -321,6 +324,46 @@ class EagleVerifyInputV2Mixin:
                 retrive_next_sibling=self.retrive_next_sibling,
                 target_predict=target_predict,
                 topk=self.topk,
+                target_logits=next_token_logits.reshape(bs, self.draft_token_num, -1),
+                csd_table_keys=csd_runtime.table.keys if csd_runtime else None,
+                csd_delta_pairs=(
+                    csd_runtime.delta_buffer.pairs
+                    if csd_runtime and csd_runtime.delta_buffer is not None
+                    else None
+                ),
+                csd_delta_counter=(
+                    csd_runtime.delta_buffer.counter
+                    if csd_runtime and csd_runtime.delta_buffer is not None
+                    else None
+                ),
+                csd_lookup_hit_ct=(
+                    csd_runtime.metrics.lookup_hit_ct if csd_runtime else None
+                ),
+                csd_forced_accept_ct=(
+                    csd_runtime.metrics.forced_accept_ct if csd_runtime else None
+                ),
+                csd_delta_pair_ct=(
+                    csd_runtime.metrics.delta_pair_ct if csd_runtime else None
+                ),
+                csd_table_capacity=csd_runtime.table.capacity if csd_runtime else 0,
+                csd_table_max_probe=csd_runtime.table.max_probe if csd_runtime else 0,
+                csd_delta_capacity=(
+                    csd_runtime.delta_buffer.capacity
+                    if csd_runtime and csd_runtime.delta_buffer is not None
+                    else 0
+                ),
+                csd_enabled=bool(csd_runtime and csd_runtime.enabled and csd_runtime.has_table),
+                csd_dynamic_update=bool(
+                    csd_runtime
+                    and csd_runtime.dynamic_update
+                    and csd_runtime.delta_buffer is not None
+                ),
+                csd_force_accept_disabled=bool(
+                    csd_runtime and csd_runtime.force_accept_disabled
+                ),
+                csd_logit_margin=math.log(
+                    get_global_server_args().speculative_csd_prob_ratio
+                ),
             )
         else:
             # Apply temperature and get target probs
@@ -365,6 +408,46 @@ class EagleVerifyInputV2Mixin:
                 uniform_samples_for_final_sampling=coins_for_final_sampling,
                 target_probs=target_probs,
                 draft_probs=draft_probs,
+                target_logits=next_token_logits.reshape(bs, self.draft_token_num, -1),
+                csd_table_keys=csd_runtime.table.keys if csd_runtime else None,
+                csd_delta_pairs=(
+                    csd_runtime.delta_buffer.pairs
+                    if csd_runtime and csd_runtime.delta_buffer is not None
+                    else None
+                ),
+                csd_delta_counter=(
+                    csd_runtime.delta_buffer.counter
+                    if csd_runtime and csd_runtime.delta_buffer is not None
+                    else None
+                ),
+                csd_lookup_hit_ct=(
+                    csd_runtime.metrics.lookup_hit_ct if csd_runtime else None
+                ),
+                csd_forced_accept_ct=(
+                    csd_runtime.metrics.forced_accept_ct if csd_runtime else None
+                ),
+                csd_delta_pair_ct=(
+                    csd_runtime.metrics.delta_pair_ct if csd_runtime else None
+                ),
+                csd_table_capacity=csd_runtime.table.capacity if csd_runtime else 0,
+                csd_table_max_probe=csd_runtime.table.max_probe if csd_runtime else 0,
+                csd_delta_capacity=(
+                    csd_runtime.delta_buffer.capacity
+                    if csd_runtime and csd_runtime.delta_buffer is not None
+                    else 0
+                ),
+                csd_enabled=bool(csd_runtime and csd_runtime.enabled and csd_runtime.has_table),
+                csd_dynamic_update=bool(
+                    csd_runtime
+                    and csd_runtime.dynamic_update
+                    and csd_runtime.delta_buffer is not None
+                ),
+                csd_force_accept_disabled=bool(
+                    csd_runtime and csd_runtime.force_accept_disabled
+                ),
+                csd_logit_margin=math.log(
+                    get_global_server_args().speculative_csd_prob_ratio
+                ),
                 threshold_single=get_global_server_args().speculative_accept_threshold_single,
                 threshold_acc=get_global_server_args().speculative_accept_threshold_acc,
                 deterministic=True,

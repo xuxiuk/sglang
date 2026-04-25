@@ -781,6 +781,7 @@ class EAGLEWorker(TpModelWorker):
             self.token_to_kv_pool_allocator,
             self.page_size,
             vocab_mask,
+            csd_runtime=self.csd_runtime,
         )
 
         # Post process based on verified outputs.

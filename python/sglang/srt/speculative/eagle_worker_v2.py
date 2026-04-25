@@ -839,7 +839,7 @@ class EAGLEWorkerV2(BaseSpecWorker):
             predict,
             accept_length,
             accept_index,
-        ) = verify_input.sample(batch, logits_output, vocab_mask)
+        ) = verify_input.sample(batch, logits_output, vocab_mask, csd_runtime=self.csd_runtime)
         new_seq_lens = batch.seq_lens + accept_length
 
         # Update mamba state for hybrid GDN models after verification

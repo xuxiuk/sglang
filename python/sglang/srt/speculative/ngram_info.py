@@ -304,6 +304,9 @@ class NgramVerifyInput(SpecInput):
             retrive_next_token=self.retrive_next_token,
             retrive_next_sibling=self.retrive_next_sibling,
             target_predict=target_predict,
+            target_logits=logits_output.next_token_logits.reshape(
+                bs, self.draft_token_num, -1
+            ),
         )
 
     def _sampling_verify(

@@ -168,6 +168,20 @@ def verify_tree_greedy_func(
     retrive_next_sibling: torch.Tensor,
     target_predict: torch.Tensor,
     topk: int = -1,
+    target_logits: torch.Tensor | None = None,
+    csd_table_keys: torch.Tensor | None = None,
+    csd_delta_pairs: torch.Tensor | None = None,
+    csd_delta_counter: torch.Tensor | None = None,
+    csd_lookup_hit_ct: torch.Tensor | None = None,
+    csd_forced_accept_ct: torch.Tensor | None = None,
+    csd_delta_pair_ct: torch.Tensor | None = None,
+    csd_table_capacity: int = 0,
+    csd_table_max_probe: int = 0,
+    csd_delta_capacity: int = 0,
+    csd_enabled: bool = False,
+    csd_dynamic_update: bool = False,
+    csd_force_accept_disabled: bool = False,
+    csd_logit_margin: float | None = None,
 ):
     if _is_cuda or _is_hip:
         from sgl_kernel import verify_tree_greedy
@@ -181,6 +195,20 @@ def verify_tree_greedy_func(
             retrive_next_token=retrive_next_token,
             retrive_next_sibling=retrive_next_sibling,
             target_predict=target_predict,
+            target_logits=target_logits,
+            csd_table_keys=csd_table_keys,
+            csd_delta_pairs=csd_delta_pairs,
+            csd_delta_counter=csd_delta_counter,
+            csd_lookup_hit_ct=csd_lookup_hit_ct,
+            csd_forced_accept_ct=csd_forced_accept_ct,
+            csd_delta_pair_ct=csd_delta_pair_ct,
+            csd_table_capacity=csd_table_capacity,
+            csd_table_max_probe=csd_table_max_probe,
+            csd_delta_capacity=csd_delta_capacity,
+            csd_enabled=csd_enabled,
+            csd_dynamic_update=csd_dynamic_update,
+            csd_force_accept_disabled=csd_force_accept_disabled,
+            csd_logit_margin=csd_logit_margin,
         )
 
     elif _is_npu:
