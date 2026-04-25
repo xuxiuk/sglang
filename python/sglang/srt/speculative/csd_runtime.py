@@ -150,7 +150,7 @@ class CSDTableStore:
         for key, count in counts.items():
             entry = self.entries.get(key)
             if entry is None:
-                self.entries[key] = CSDEntry(freq=int(count), allow=False)
+                self.entries[key] = CSDEntry(freq=int(count), allow=True)
             else:
                 entry.freq += int(count)
 
@@ -162,7 +162,7 @@ class CSDTableStore:
                 key=lambda item: item[1].freq,
                 reverse=True,
             )
-            if entry.allow and entry.freq >= freq_threshold
+            if entry.freq >= freq_threshold
         ]
 
     def build_allow_hash_table(
