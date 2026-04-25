@@ -248,6 +248,10 @@ TORCH_LIBRARY_FRAGMENT(sgl_kernel, m) {
       "tree_speculative_sampling_target_only(Tensor! predicts, Tensor! accept_index, Tensor! accept_token_num, "
       "Tensor candidates, Tensor retrive_index, Tensor retrive_next_token, Tensor retrive_next_sibling, "
       "Tensor uniform_samples, Tensor uniform_samples_for_final_sampling, Tensor target_probs, Tensor draft_probs, "
+      "Tensor target_logits, Tensor csd_table_keys, Tensor csd_delta_pairs, Tensor csd_delta_counter, "
+      "Tensor csd_lookup_hit_ct, Tensor csd_forced_accept_ct, Tensor csd_delta_pair_ct, "
+      "int csd_table_capacity, int csd_table_max_probe, int csd_delta_capacity, bool csd_enabled, "
+      "bool csd_dynamic_update, bool csd_force_accept_disabled, float csd_logit_margin, "
       "float threshold_single, float threshold_acc, "
       "bool deterministic) -> ()");
   m.impl("tree_speculative_sampling_target_only", torch::kCUDA, &tree_speculative_sampling_target_only);
@@ -255,7 +259,10 @@ TORCH_LIBRARY_FRAGMENT(sgl_kernel, m) {
   m.def(
       "verify_tree_greedy(Tensor! predicts, Tensor! accept_index, Tensor! accept_token_num, "
       "Tensor candidates, Tensor retrive_index, Tensor retrive_next_token, Tensor retrive_next_sibling, "
-      "Tensor target_predict) -> ()");
+      "Tensor target_predict, Tensor target_logits, Tensor csd_table_keys, Tensor csd_delta_pairs, "
+      "Tensor csd_delta_counter, Tensor csd_lookup_hit_ct, Tensor csd_forced_accept_ct, Tensor csd_delta_pair_ct, "
+      "int csd_table_capacity, int csd_table_max_probe, int csd_delta_capacity, bool csd_enabled, "
+      "bool csd_dynamic_update, bool csd_force_accept_disabled, float csd_logit_margin) -> ()");
   m.impl("verify_tree_greedy", torch::kCUDA, &verify_tree_greedy);
 
   m.def(

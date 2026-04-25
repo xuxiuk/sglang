@@ -40,6 +40,20 @@ void tree_speculative_sampling_target_only(
     at::Tensor uniform_samples_for_final_sampling,
     at::Tensor target_probs,
     at::Tensor draft_probs,
+    at::Tensor target_logits,
+    at::Tensor csd_table_keys,
+    at::Tensor csd_delta_pairs,
+    at::Tensor csd_delta_counter,
+    at::Tensor csd_lookup_hit_ct,
+    at::Tensor csd_forced_accept_ct,
+    at::Tensor csd_delta_pair_ct,
+    int64_t csd_table_capacity,
+    int64_t csd_table_max_probe,
+    int64_t csd_delta_capacity,
+    bool csd_enabled,
+    bool csd_dynamic_update,
+    bool csd_force_accept_disabled,
+    double csd_logit_margin,
     double threshold_single,
     double threshold_acc,
     bool deterministic = true) {
@@ -50,6 +64,13 @@ void tree_speculative_sampling_target_only(
   CHECK_INPUT(uniform_samples);
   CHECK_INPUT(uniform_samples_for_final_sampling);
   CHECK_INPUT(target_probs);
+  CHECK_INPUT(target_logits);
+  CHECK_INPUT(csd_table_keys);
+  CHECK_INPUT(csd_delta_pairs);
+  CHECK_INPUT(csd_delta_counter);
+  CHECK_INPUT(csd_lookup_hit_ct);
+  CHECK_INPUT(csd_forced_accept_ct);
+  CHECK_INPUT(csd_delta_pair_ct);
   auto device = target_probs.device();
   CHECK_EQ(candidates.device(), device);
   CHECK_EQ(retrive_index.device(), device);
@@ -58,6 +79,13 @@ void tree_speculative_sampling_target_only(
   CHECK_EQ(uniform_samples.device(), device);
   CHECK_EQ(uniform_samples_for_final_sampling.device(), device);
   CHECK_EQ(target_probs.device(), device);
+  CHECK_EQ(target_logits.device(), device);
+  CHECK_EQ(csd_table_keys.device(), device);
+  CHECK_EQ(csd_delta_pairs.device(), device);
+  CHECK_EQ(csd_delta_counter.device(), device);
+  CHECK_EQ(csd_lookup_hit_ct.device(), device);
+  CHECK_EQ(csd_forced_accept_ct.device(), device);
+  CHECK_EQ(csd_delta_pair_ct.device(), device);
   CHECK_DIM(1, predicts);
   CHECK_DIM(2, accept_index);
   CHECK_DIM(1, accept_token_num);
@@ -68,6 +96,13 @@ void tree_speculative_sampling_target_only(
   CHECK_DIM(2, uniform_samples);
   CHECK_DIM(3, target_probs);
   CHECK_DIM(3, draft_probs);
+  CHECK_DIM(3, target_logits);
+  CHECK_DIM(1, csd_table_keys);
+  CHECK_DIM(1, csd_delta_pairs);
+  CHECK_DIM(1, csd_delta_counter);
+  CHECK_DIM(1, csd_lookup_hit_ct);
+  CHECK_DIM(1, csd_forced_accept_ct);
+  CHECK_DIM(1, csd_delta_pair_ct);
   unsigned int batch_size = uniform_samples.size(0);
   unsigned int num_spec_step = accept_index.size(1);
   unsigned int num_draft_tokens = candidates.size(1);
@@ -77,12 +112,15 @@ void tree_speculative_sampling_target_only(
   CHECK_EQ(batch_size, retrive_next_token.size(0));
   CHECK_EQ(batch_size, retrive_next_sibling.size(0));
   CHECK_EQ(batch_size, target_probs.size(0));
+  CHECK_EQ(batch_size, target_logits.size(0));
   CHECK_EQ(num_draft_tokens, retrive_index.size(1));
   CHECK_EQ(num_draft_tokens, retrive_next_token.size(1));
   CHECK_EQ(num_draft_tokens, retrive_next_sibling.size(1));
   CHECK_EQ(num_draft_tokens, uniform_samples.size(1));
   CHECK_EQ(num_draft_tokens, target_probs.size(1));
+  CHECK_EQ(num_draft_tokens, target_logits.size(1));
   CHECK_EQ(vocab_size, target_probs.size(2));
+  CHECK_EQ(vocab_size, target_logits.size(2));
   CHECK_EQ(batch_size, accept_index.size(0));
   CHECK_EQ(batch_size, accept_token_num.size(0));
   if (predicts.scalar_type() != at::kInt) {
@@ -116,7 +154,28 @@ void tree_speculative_sampling_target_only(
     throw std::runtime_error("Expected 'target_probs' to be of type float (torch.float32).");
   }
   if (draft_probs.scalar_type() != at::kFloat) {
-    throw std::runtime_error("Expected 'target_probs' to be of type float (torch.float32).");
+    throw std::runtime_error("Expected 'draft_probs' to be of type float (torch.float32).");
+  }
+  if (target_logits.scalar_type() != at::kFloat) {
+    throw std::runtime_error("Expected 'target_logits' to be of type float (torch.float32).");
+  }
+  if (csd_table_keys.scalar_type() != at::kLong) {
+    throw std::runtime_error("Expected 'csd_table_keys' to be of type long (torch.int64).");
+  }
+  if (csd_delta_pairs.scalar_type() != at::kLong) {
+    throw std::runtime_error("Expected 'csd_delta_pairs' to be of type long (torch.int64).");
+  }
+  if (csd_delta_counter.scalar_type() != at::kInt) {
+    throw std::runtime_error("Expected 'csd_delta_counter' to be of type int (torch.int32).");
+  }
+  if (csd_lookup_hit_ct.scalar_type() != at::kLong) {
+    throw std::runtime_error("Expected 'csd_lookup_hit_ct' to be of type long (torch.int64).");
+  }
+  if (csd_forced_accept_ct.scalar_type() != at::kLong) {
+    throw std::runtime_error("Expected 'csd_forced_accept_ct' to be of type long (torch.int64).");
+  }
+  if (csd_delta_pair_ct.scalar_type() != at::kLong) {
+    throw std::runtime_error("Expected 'csd_delta_pair_ct' to be of type long (torch.int64).");
   }
   CHECK_GE(threshold_single, 0);
   CHECK_GE(1, threshold_single);
@@ -136,6 +195,7 @@ void tree_speculative_sampling_target_only(
       static_cast<float*>(uniform_samples_for_final_sampling.data_ptr()),
       static_cast<float*>(target_probs.data_ptr()),
       static_cast<float*>(draft_probs.data_ptr()),
+      static_cast<float*>(target_logits.data_ptr()),
       batch_size,
       num_spec_step,
       num_draft_tokens,
@@ -143,6 +203,19 @@ void tree_speculative_sampling_target_only(
       static_cast<float>(threshold_single),
       static_cast<float>(threshold_acc),
       deterministic,
+      static_cast<int64_t*>(csd_table_keys.data_ptr()),
+      static_cast<int64_t*>(csd_delta_pairs.data_ptr()),
+      static_cast<int32_t*>(csd_delta_counter.data_ptr()),
+      static_cast<int64_t*>(csd_lookup_hit_ct.data_ptr()),
+      static_cast<int64_t*>(csd_forced_accept_ct.data_ptr()),
+      static_cast<int64_t*>(csd_delta_pair_ct.data_ptr()),
+      static_cast<uint32_t>(csd_table_capacity),
+      static_cast<uint32_t>(csd_table_max_probe),
+      static_cast<uint32_t>(csd_delta_capacity),
+      csd_enabled,
+      csd_dynamic_update,
+      csd_force_accept_disabled,
+      static_cast<float>(csd_logit_margin),
       stream);
 
   TORCH_CHECK(
