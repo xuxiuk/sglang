@@ -8,12 +8,12 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd -- "${SCRIPT_DIR}/../.." && pwd)
 
-OUT_DIR=${OUT_DIR:-/home/zhouxuwen/sglang/benchmark/gsm8k/csd_runs}
+OUT_DIR=${OUT_DIR:-/home/zhouxuwen/sglang/benchmark/gsm8k/csd_no_tree_runs}
 DATA_PATH=${DATA_PATH:-/home/zhouxuwen/sglang/benchmark/gsm8k/test.jsonl}
 MODEL_PATH=${MODEL_PATH:-/home/shared/models/Qwen/Qwen3.5-35B-A3B}
 HOST=${HOST:-127.0.0.1}
-PORT=${PORT:-30000}
-CUDA_DEVICES=${CUDA_DEVICES:-6,7}
+PORT=${PORT:-30001}
+CUDA_DEVICES=${CUDA_DEVICES:-4,5}
 TP_SIZE=${TP_SIZE:-2}
 NUM_QUESTIONS=${NUM_QUESTIONS:-1500}
 NUM_SHOTS=${NUM_SHOTS:-5}
@@ -21,23 +21,17 @@ PARALLEL_LIST=${PARALLEL_LIST:-"8 1 2 4 16"}
 MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-512}
 TOP_P=${TOP_P:-1.0}
 TEMPERATURES=${TEMPERATURES:-"0.0 1.0"}
-SPEC_NUM_STEPS=${SPEC_NUM_STEPS:-5}
-SPEC_TOPK=${SPEC_TOPK:-3}
-SPEC_DRAFT_TOKENS=${SPEC_DRAFT_TOKENS:-15}
+SPEC_LENGTHS=${SPEC_LENGTHS:-"4 8 12 15"}
+SPEC_TOPK=${SPEC_TOPK:-1}
 CSD_FREQ_THRESHOLD=${CSD_FREQ_THRESHOLD:-3}
 CSD_PROB_RATIO=${CSD_PROB_RATIO:-0.01}
-REDPAJAMA_SAMPLES_PER_DOMAIN=${REDPAJAMA_SAMPLES_PER_DOMAIN:-1000}
-REDPAJAMA_SPEC_NUM_STEPS=${REDPAJAMA_SPEC_NUM_STEPS:-5}
-REDPAJAMA_SPEC_TOPK=${REDPAJAMA_SPEC_TOPK:-3}
-REDPAJAMA_SPEC_DRAFT_TOKENS=${REDPAJAMA_SPEC_DRAFT_TOKENS:-15}
-CSD_TABLE_PATH=${CSD_TABLE_PATH:-/home/zhouxuwen/sglang/benchmark/redpajama/csd_runs/csd_table_redpajama_6domains_n${REDPAJAMA_SAMPLES_PER_DOMAIN}_temp1_topk${REDPAJAMA_SPEC_TOPK}_steps${REDPAJAMA_SPEC_NUM_STEPS}_draft${REDPAJAMA_SPEC_DRAFT_TOKENS}_freq${CSD_FREQ_THRESHOLD}_ratio${CSD_PROB_RATIO}.json}
 MEM_FRACTION_STATIC=${MEM_FRACTION_STATIC:-0.85}
 WATCHDOG_TIMEOUT=${WATCHDOG_TIMEOUT:-3000}
 SGLANG_TORCH_PROFILER_DIR=${SGLANG_TORCH_PROFILER_DIR:-/home/zhouxuwen/sglang/profiles}
 
 mkdir -p "${OUT_DIR}"
 cd "${REPO_ROOT}"
-RESULT_FILE=${RESULT_FILE:-"${OUT_DIR}/result.jsonl"}
+RESULT_FILE=${RESULT_FILE:-"${OUT_DIR}/result_no_tree.jsonl"}
 
 SERVER_PID=""
 SERVER_PGID=""
@@ -155,7 +149,7 @@ start_server() {
       --port "${PORT}" \
       "$@" >"${SERVER_LOG}" 2>&1 &
   SERVER_PID=$!
-  SERVER_PGID=$(ps -o pgid= -p "${SERVER_PID}" 2>/dev/null | tr -d ' ' || true)
+  SERVER_PGID=$(ps -o pgid= -p "${SERVER_PID}" | tr -d ' ')
   wait_for_server
 }
 
@@ -189,62 +183,82 @@ run_bench() {
 
 trap cleanup_server EXIT
 
-if [[ ! -f "${CSD_TABLE_PATH}" ]]; then
-  echo "CSD table not found: ${CSD_TABLE_PATH}" >&2
-  echo "Set CSD_TABLE_PATH=/path/to/redpajama_table.json or run benchmark/redpajama/run_csd_calibration.sh first." >&2
-  exit 1
-fi
+model_name=$(safe_name "${MODEL_PATH}")
 
 for temp in ${TEMPERATURES}; do
   temp_tag=${temp//./p}
   for parallel in ${PARALLEL_LIST}; do
-    run_id="temp${temp_tag}_parallel${parallel}"
-
-    echo "=== temperature=${temp}, parallel=${parallel}, csd_table=${CSD_TABLE_PATH} ==="
+    baseline_run_id="temp${temp_tag}_parallel${parallel}_baseline"
 
     stop_server
-    start_server "baseline" "${run_id}"
-    run_bench "baseline" "${temp}" "${run_id}" "${parallel}" \
+    start_server "baseline" "${baseline_run_id}"
+    run_bench "baseline" "${temp}" "${baseline_run_id}" "${parallel}" \
       --speculative-algorithm none
 
-    stop_server
-    start_server "vanilla" "${run_id}" \
-      --speculative-algorithm EAGLE \
-      --speculative-num-steps "${SPEC_NUM_STEPS}" \
-      --speculative-eagle-topk "${SPEC_TOPK}" \
-      --speculative-num-draft-tokens "${SPEC_DRAFT_TOKENS}"
-    run_bench "vanilla" "${temp}" "${run_id}" "${parallel}" \
-      --speculative-algorithm EAGLE \
-      --speculative-num-steps "${SPEC_NUM_STEPS}" \
-      --speculative-eagle-topk "${SPEC_TOPK}" \
-      --speculative-num-draft-tokens "${SPEC_DRAFT_TOKENS}"
+    for spec_len in ${SPEC_LENGTHS}; do
+      run_id="temp${temp_tag}_parallel${parallel}_len${spec_len}_topk${SPEC_TOPK}"
+      csd_table_path="${OUT_DIR}/csd_table_gsm8k_n${NUM_QUESTIONS}_${model_name}_mtp_no_tree_topk${SPEC_TOPK}_len${spec_len}_temp${temp_tag}_parallel${parallel}_top_p${TOP_P}_freq${CSD_FREQ_THRESHOLD}_ratio${CSD_PROB_RATIO}.json"
 
-    stop_server
-    start_server "csd" "${run_id}" \
-      --speculative-algorithm EAGLE \
-      --speculative-num-steps "${SPEC_NUM_STEPS}" \
-      --speculative-eagle-topk "${SPEC_TOPK}" \
-      --speculative-num-draft-tokens "${SPEC_DRAFT_TOKENS}" \
-      --speculative-csd \
-      --speculative-csd-table-path "${CSD_TABLE_PATH}" \
-      --speculative-csd-freq-threshold "${CSD_FREQ_THRESHOLD}" \
-      --speculative-csd-prob-ratio "${CSD_PROB_RATIO}"
-    run_bench "csd" "${temp}" "${run_id}" "${parallel}" \
-      --speculative-algorithm EAGLE \
-      --speculative-num-steps "${SPEC_NUM_STEPS}" \
-      --speculative-eagle-topk "${SPEC_TOPK}" \
-      --speculative-num-draft-tokens "${SPEC_DRAFT_TOKENS}" \
-      --csd-enabled \
-      --csd-table-path "${CSD_TABLE_PATH}" \
-      --csd-freq-threshold "${CSD_FREQ_THRESHOLD}" \
-      --csd-prob-ratio "${CSD_PROB_RATIO}" \
-      --csd-log-result
+      echo "=== temperature=${temp}, parallel=${parallel}, spec_len=${spec_len}, table=${csd_table_path} ==="
+
+      stop_server
+      start_server "record" "${run_id}" \
+        --speculative-algorithm EAGLE \
+        --speculative-num-steps "${spec_len}" \
+        --speculative-eagle-topk "${SPEC_TOPK}" \
+        --speculative-num-draft-tokens "${spec_len}" \
+        --speculative-csd \
+        --speculative-csd-dynamic-update \
+        --speculative-csd-force-accept-disabled
+      run_bench "record" "${temp}" "${run_id}" "${parallel}" \
+        --speculative-algorithm EAGLE \
+        --speculative-num-steps "${spec_len}" \
+        --speculative-eagle-topk "${SPEC_TOPK}" \
+        --speculative-num-draft-tokens "${spec_len}" \
+        --csd-enabled \
+        --csd-dynamic-update \
+        --csd-force-accept-disabled \
+        --csd-freq-threshold "${CSD_FREQ_THRESHOLD}" \
+        --csd-prob-ratio "${CSD_PROB_RATIO}" \
+        --csd-log-result \
+        --csd-save-table-path "${csd_table_path}"
+
+      python - <<PY_TABLE
+import json
+path = "${csd_table_path}"
+payload = json.load(open(path))
+entries = payload.get("entries", [])
+print({"table": path, "entries": len(entries), "freq_ge_threshold": sum(int(e.get("freq", 0)) >= int("${CSD_FREQ_THRESHOLD}") for e in entries)})
+PY_TABLE
+
+      stop_server
+      start_server "csd" "${run_id}" \
+        --speculative-algorithm EAGLE \
+        --speculative-num-steps "${spec_len}" \
+        --speculative-eagle-topk "${SPEC_TOPK}" \
+        --speculative-num-draft-tokens "${spec_len}" \
+        --max-running-requests 1 \
+        --speculative-csd \
+        --speculative-csd-table-path "${csd_table_path}" \
+        --speculative-csd-freq-threshold "${CSD_FREQ_THRESHOLD}" \
+        --speculative-csd-prob-ratio "${CSD_PROB_RATIO}"
+      run_bench "csd" "${temp}" "${run_id}" "${parallel}" \
+        --speculative-algorithm EAGLE \
+        --speculative-num-steps "${spec_len}" \
+        --speculative-eagle-topk "${SPEC_TOPK}" \
+        --speculative-num-draft-tokens "${spec_len}" \
+        --csd-enabled \
+        --csd-table-path "${csd_table_path}" \
+        --csd-freq-threshold "${CSD_FREQ_THRESHOLD}" \
+        --csd-prob-ratio "${CSD_PROB_RATIO}" \
+        --csd-log-result
+    done
   done
 done
 
 stop_server
 
-python - <<PY
+python - <<PY_SUMMARY
 import json, os
 path = "${RESULT_FILE}"
 if not os.path.exists(path):
@@ -266,4 +280,4 @@ for line in open(path):
         "parallel": other.get("parallel"),
         "speculative": other.get("speculative"),
     })
-PY
+PY_SUMMARY

@@ -51,6 +51,13 @@ class SchedulerOutputProcessorMixin:
                 storage_backend_type = type(storage_backend).__name__
         return storage_backend_type
 
+    def _get_csd_metrics_snapshot(self: Scheduler) -> Optional[dict]:
+        draft_worker = getattr(self, "draft_worker", None)
+        csd_runtime = getattr(draft_worker, "csd_runtime", None)
+        if csd_runtime is None or not csd_runtime.enabled:
+            return None
+        return csd_runtime.metrics.snapshot()
+
     def _get_cached_tokens_details(self: Scheduler, req: Req) -> Optional[dict]:
         """Get detailed cache breakdown for a request, if available.
 
@@ -955,6 +962,8 @@ class SchedulerOutputProcessorMixin:
         customized_info = {}
 
         time_stats = []
+        csd_metrics_snapshot = None
+        csd_metrics_snapshot_loaded = False
 
         if return_logprob:
             input_token_logprobs_val = []
@@ -1143,6 +1152,14 @@ class SchedulerOutputProcessorMixin:
                         customized_info[k].append(
                             v[send_token_offset : len(output_ids_)]
                         )
+                if not csd_metrics_snapshot_loaded:
+                    csd_metrics_snapshot = self._get_csd_metrics_snapshot()
+                    csd_metrics_snapshot_loaded = True
+                if csd_metrics_snapshot is not None:
+                    for k, v in csd_metrics_snapshot.items():
+                        if k not in customized_info:
+                            customized_info[k] = []
+                        customized_info[k].append(v)
 
             if (
                 req.finished()

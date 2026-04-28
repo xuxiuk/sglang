@@ -398,7 +398,10 @@ class CSDRuntime:
         )
         delta_buffer = None
         if server_args.speculative_csd_dynamic_update:
-            delta_buffer = CSDDeltaBuffer.allocate(device=device, capacity=delta_capacity)
+            delta_buffer = CSDDeltaBuffer.allocate(
+                device=device,
+                capacity=server_args.speculative_csd_delta_capacity,
+            )
 
         return cls(
             enabled=True,

@@ -505,6 +505,7 @@ class ServerArgs:
     speculative_csd_prob_ratio: float = 0.01
     speculative_csd_dynamic_update: bool = False
     speculative_csd_delta_save_path: Optional[str] = None
+    speculative_csd_delta_capacity: int = 1 << 20
     speculative_csd_force_accept_disabled: bool = False
     speculative_token_map: Optional[str] = None
     speculative_attention_mode: str = "prefill"
@@ -3006,6 +3007,10 @@ class ServerArgs:
                 raise ValueError(
                     "--speculative-csd requires either --speculative-csd-table-path or --speculative-csd-dynamic-update."
                 )
+            if self.speculative_csd_delta_capacity < 1:
+                raise ValueError(
+                    "--speculative-csd-delta-capacity must be at least 1."
+                )
             if (
                 self.speculative_csd_dynamic_update
                 and self.speculative_csd_delta_save_path is None
@@ -4882,6 +4887,12 @@ class ServerArgs:
             type=str,
             default=ServerArgs.speculative_csd_delta_save_path,
             help="Optional path to save dynamically collected CSD pair deltas.",
+        )
+        parser.add_argument(
+            "--speculative-csd-delta-capacity",
+            type=int,
+            default=ServerArgs.speculative_csd_delta_capacity,
+            help="Maximum number of dynamically collected CSD pairs buffered before saving the table.",
         )
         parser.add_argument(
             "--speculative-csd-force-accept-disabled",
