@@ -341,13 +341,15 @@ LIGHTEVAL_PYTHON=/home/zhouxuwen/miniconda3/envs/lighteval-sglang/bin/python \
   bash benchmark/csd/eval/run_lighteval_csd_experiment.sh
 ```
 
-这个入口默认使用随 CSD benchmark 提交的修改版 LightEval：
+这个入口使用随 CSD benchmark 提交的修改版 LightEval。先在对应 Python 环境里安装：
 
-```text
-benchmark/csd/lighteval/
+```bash
+cd benchmark/csd/lighteval
+pip install -e .
+cd ../../..
 ```
 
-也可以用 `LIGHTEVAL_SRC=/path/to/lighteval/src` 覆盖。修改版主要包括 SGLang config 参数透传、`meta_info` 保留和 speculative/CSD metrics accumulator。
+修改版主要包括 SGLang config 参数透传、`meta_info` 保留和 speculative/CSD metrics accumulator。runner 默认会优先使用 `benchmark/csd/lighteval/src`，也可以用 `LIGHTEVAL_SRC=/path/to/lighteval/src` 覆盖。
 
 ## 关键指标
 
