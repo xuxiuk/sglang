@@ -835,11 +835,16 @@ class EAGLEWorkerV2(BaseSpecWorker):
 
         # Sample
         maybe_detect_nan(logits_output.next_token_logits, "verify: target model logits")
+        self.csd_runtime.maybe_apply_async_rebuild(device=self.device)
         (
             predict,
             accept_length,
             accept_index,
         ) = verify_input.sample(batch, logits_output, vocab_mask, csd_runtime=self.csd_runtime)
+        self.csd_runtime.maybe_start_async_rebuild(
+            freq_threshold=self.server_args.speculative_csd_freq_threshold,
+            rebuild_threshold=self.server_args.speculative_csd_rebuild_threshold,
+        )
         new_seq_lens = batch.seq_lens + accept_length
 
         # Update mamba state for hybrid GDN models after verification

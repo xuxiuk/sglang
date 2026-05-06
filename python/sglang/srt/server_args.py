@@ -505,7 +505,8 @@ class ServerArgs:
     speculative_csd_prob_ratio: float = 0.01
     speculative_csd_dynamic_update: bool = False
     speculative_csd_delta_save_path: Optional[str] = None
-    speculative_csd_delta_capacity: int = 1 << 20
+    speculative_csd_delta_capacity: Optional[int] = None
+    speculative_csd_rebuild_threshold: int = 4096
     speculative_csd_force_accept_disabled: bool = False
     speculative_token_map: Optional[str] = None
     speculative_attention_mode: str = "prefill"
@@ -3007,6 +3008,16 @@ class ServerArgs:
                 raise ValueError(
                     "--speculative-csd requires either --speculative-csd-table-path or --speculative-csd-dynamic-update."
                 )
+            if self.speculative_csd_delta_capacity is None:
+                if (
+                    self.speculative_csd_dynamic_update
+                    and self.speculative_csd_table_path is not None
+                ):
+                    self.speculative_csd_delta_capacity = max(
+                        2 * self.speculative_csd_rebuild_threshold, 1
+                    )
+                else:
+                    self.speculative_csd_delta_capacity = 1 << 20
             if self.speculative_csd_delta_capacity < 1:
                 raise ValueError(
                     "--speculative-csd-delta-capacity must be at least 1."
@@ -4893,6 +4904,12 @@ class ServerArgs:
             type=int,
             default=ServerArgs.speculative_csd_delta_capacity,
             help="Maximum number of dynamically collected CSD pairs buffered before saving the table.",
+        )
+        parser.add_argument(
+            "--speculative-csd-rebuild-threshold",
+            type=int,
+            default=ServerArgs.speculative_csd_rebuild_threshold,
+            help="Minimum number of dynamically collected CSD pairs required to trigger an online CSD table rebuild; set <= 0 to disable online rebuild.",
         )
         parser.add_argument(
             "--speculative-csd-force-accept-disabled",

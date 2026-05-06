@@ -774,6 +774,8 @@ class EAGLEWorker(TpModelWorker):
 
         maybe_detect_nan(logits_output.next_token_logits, "verify: target model logits")
 
+        self.csd_runtime.maybe_apply_async_rebuild(device=self.device)
+
         spec_info.hidden_states = logits_output.hidden_states
         res: EagleVerifyOutput = spec_info.verify(
             batch,
@@ -782,6 +784,10 @@ class EAGLEWorker(TpModelWorker):
             self.page_size,
             vocab_mask,
             csd_runtime=self.csd_runtime,
+        )
+        self.csd_runtime.maybe_start_async_rebuild(
+            freq_threshold=self.server_args.speculative_csd_freq_threshold,
+            rebuild_threshold=self.server_args.speculative_csd_rebuild_threshold,
         )
 
         # Post process based on verified outputs.

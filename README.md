@@ -65,6 +65,10 @@ Its core features include:
 - **Active Community**: SGLang is open-source and supported by a vibrant community with widespread industry adoption, powering over 400,000 GPUs worldwide.
 - **RL & Post-Training Backbone**: SGLang is a proven rollout backend used for training many frontier models, with native RL integrations and adoption by well-known post-training frameworks such as [**AReaL**](https://github.com/inclusionAI/AReaL), [**Miles**](https://github.com/radixark/miles), [**slime**](https://github.com/THUDM/slime), [**Tunix**](https://github.com/google/tunix), [**verl**](https://github.com/volcengine/verl) and more.
 
+## CSD 投机解码实验说明
+
+本分支的 CSD record/replay 实现策略、启动参数、编译说明和 benchmark 流程见 `README_CSD.md`。
+
 ## Getting Started
 - [Install SGLang](https://docs.sglang.io/get_started/install.html)
 - [Quick Start](https://docs.sglang.io/basic_usage/send_request.html)

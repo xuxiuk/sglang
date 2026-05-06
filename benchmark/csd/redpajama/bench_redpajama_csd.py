@@ -85,8 +85,14 @@ def _default_csd_table_path(args):
         f"n{args.samples_per_domain}_x{len(args.domains)}",
         _safe_filename_part(args.model_name),
         _safe_filename_part(_draft_model_name(args)),
+        _safe_filename_part(args.speculative_algorithm),
         f"temp{args.temperature:g}",
         f"top_p{args.top_p:g}",
+        f"topk{args.speculative_eagle_topk}",
+        f"steps{args.speculative_num_steps}",
+        f"draft{args.speculative_num_draft_tokens}",
+        f"freq{args.csd_freq_threshold}",
+        f"ratio{args.csd_prob_ratio}",
     ]
     if args.run_tag:
         parts.append(args.run_tag)
@@ -392,7 +398,7 @@ if __name__ == "__main__":
     parser.add_argument("--csd-log-result", action="store_true")
     parser.add_argument("--csd-save-table-path", type=str, default=None)
     parser.add_argument("--csd-auto-save-table", action="store_true")
-    parser.add_argument("--csd-save-dir", type=str, default="benchmark/redpajama/csd_runs")
+    parser.add_argument("--csd-save-dir", type=str, default="benchmark/csd/runs/redpajama")
     parser.add_argument("--csd-save-timeout", type=float, default=120.0)
     args = add_common_sglang_args_and_parse(parser)
     main(args)

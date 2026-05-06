@@ -512,7 +512,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--csd-save-dir",
         type=str,
-        default="benchmark/gsm8k/csd_runs",
+        default="benchmark/csd/runs/gsm8k",
         help="Directory used by --csd-auto-save-table.",
     )
     parser.add_argument(

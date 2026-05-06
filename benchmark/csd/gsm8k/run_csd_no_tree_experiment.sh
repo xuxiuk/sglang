@@ -6,9 +6,9 @@ fi
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-REPO_ROOT=$(cd -- "${SCRIPT_DIR}/../.." && pwd)
+REPO_ROOT=$(cd -- "${SCRIPT_DIR}/../../.." && pwd)
 
-OUT_DIR=${OUT_DIR:-/home/zhouxuwen/sglang/benchmark/gsm8k/csd_no_tree_runs}
+OUT_DIR=${OUT_DIR:-/home/zhouxuwen/sglang/benchmark/csd/runs/gsm8k_no_tree}
 DATA_PATH=${DATA_PATH:-/home/zhouxuwen/sglang/benchmark/gsm8k/test.jsonl}
 MODEL_PATH=${MODEL_PATH:-/home/shared/models/Qwen/Qwen3.5-35B-A3B}
 HOST=${HOST:-127.0.0.1}
@@ -28,10 +28,15 @@ CSD_PROB_RATIO=${CSD_PROB_RATIO:-0.01}
 REDPAJAMA_SAMPLES_PER_DOMAIN=${REDPAJAMA_SAMPLES_PER_DOMAIN:-1000}
 REDPAJAMA_SPEC_TOPK=${REDPAJAMA_SPEC_TOPK:-3}
 REDPAJAMA_SPEC_LENGTH=${REDPAJAMA_SPEC_LENGTH:-15}
-CSD_TABLE_PATH=${CSD_TABLE_PATH:-/home/zhouxuwen/sglang/benchmark/redpajama/csd_runs/csd_table_redpajama_6domains_n${REDPAJAMA_SAMPLES_PER_DOMAIN}_temp1_topk${REDPAJAMA_SPEC_TOPK}_steps${REDPAJAMA_SPEC_LENGTH}_draft${REDPAJAMA_SPEC_LENGTH}_freq${CSD_FREQ_THRESHOLD}_ratio${CSD_PROB_RATIO}.json}
+REDPAJAMA_DRAFT_MODEL_NAME=${REDPAJAMA_DRAFT_MODEL_NAME:-mtp}
+REDPAJAMA_MODEL_NAME_PART=${MODEL_PATH%/}
+REDPAJAMA_MODEL_NAME_PART=${REDPAJAMA_MODEL_NAME_PART##*/}
+REDPAJAMA_MODEL_NAME_PART=$(printf '%s' "${REDPAJAMA_MODEL_NAME_PART}" | tr -c 'A-Za-z0-9._-' '-')
+REDPAJAMA_DRAFT_MODEL_NAME_PART=$(printf '%s' "${REDPAJAMA_DRAFT_MODEL_NAME}" | tr -c 'A-Za-z0-9._-' '-')
+CSD_TABLE_PATH=${CSD_TABLE_PATH:-/home/zhouxuwen/sglang/benchmark/csd/runs/redpajama/csd_table_redpajama_6domains_n${REDPAJAMA_SAMPLES_PER_DOMAIN}_${REDPAJAMA_MODEL_NAME_PART}_${REDPAJAMA_DRAFT_MODEL_NAME_PART}_EAGLE_temp1.0_top_p1.0_topk${REDPAJAMA_SPEC_TOPK}_steps${REDPAJAMA_SPEC_LENGTH}_draft${REDPAJAMA_SPEC_LENGTH}_freq${CSD_FREQ_THRESHOLD}_ratio${CSD_PROB_RATIO}.json}
 MEM_FRACTION_STATIC=${MEM_FRACTION_STATIC:-0.7}
 WATCHDOG_TIMEOUT=${WATCHDOG_TIMEOUT:-3000}
-SGLANG_TORCH_PROFILER_DIR=${SGLANG_TORCH_PROFILER_DIR:-/home/zhouxuwen/sglang/profiles}
+SGLANG_TORCH_PROFILER_DIR=${SGLANG_TORCH_PROFILER_DIR:-/home/zhouxuwen/sglang/benchmark/csd/runs/profiles}
 
 mkdir -p "${OUT_DIR}"
 cd "${REPO_ROOT}"
@@ -189,7 +194,7 @@ trap cleanup_server EXIT
 
 if [[ ! -f "${CSD_TABLE_PATH}" ]]; then
   echo "CSD table not found: ${CSD_TABLE_PATH}" >&2
-  echo "Set CSD_TABLE_PATH=/path/to/redpajama_table.json or run benchmark/redpajama/run_csd_calibration.sh first." >&2
+  echo "Set CSD_TABLE_PATH=/path/to/redpajama_table.json or run benchmark/csd/redpajama/run_csd_calibration.sh first." >&2
   exit 1
 fi
 

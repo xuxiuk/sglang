@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 from collections import Counter
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple
@@ -18,6 +19,7 @@ CSD_DEFAULT_LOAD_FACTOR = 0.5
 CSD_DEFAULT_MAX_PROBE = 16
 CSD_DEFAULT_DELTA_CAPACITY = 1 << 20
 _UINT64_MASK = (1 << 64) - 1
+_CSD_REBUILD_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="csd-rebuild")
 
 
 def pack_csd_pair(lhs_token: int, rhs_token: int) -> int:
@@ -241,12 +243,31 @@ class CSDHashTable:
         return False
 
 
-def build_csd_hash_table(
-    keys: Iterable[int],
+@dataclass
+class CSDHashTablePayload:
+    keys: List[int]
+    num_entries: int
+    capacity: int
+    max_probe: int
+
+
+def materialize_csd_hash_table_payload(
+    payload: CSDHashTablePayload,
     device: torch.device | str,
+) -> CSDHashTable:
+    return CSDHashTable(
+        keys=torch.tensor(payload.keys, dtype=torch.int64, device=device),
+        num_entries=payload.num_entries,
+        capacity=payload.capacity,
+        max_probe=payload.max_probe,
+    )
+
+
+def build_csd_hash_table_payload(
+    keys: Iterable[int],
     max_probe: int = CSD_DEFAULT_MAX_PROBE,
     load_factor: float = CSD_DEFAULT_LOAD_FACTOR,
-) -> CSDHashTable:
+) -> CSDHashTablePayload:
     if max_probe < 1:
         raise ValueError("CSD max_probe must be at least 1")
     if not 0 < load_factor <= 1:
@@ -254,7 +275,12 @@ def build_csd_hash_table(
 
     key_list = [int(key) for key in keys]
     if not key_list:
-        return CSDHashTable.empty(device=device, max_probe=max_probe)
+        return CSDHashTablePayload(
+            keys=[CSD_EMPTY_KEY],
+            num_entries=0,
+            capacity=1,
+            max_probe=max_probe,
+        )
 
     for key in key_list:
         if key < 0:
@@ -264,13 +290,27 @@ def build_csd_hash_table(
     while True:
         hash_keys = _try_build_hash_table(key_list, capacity, max_probe)
         if hash_keys is not None:
-            return CSDHashTable(
-                keys=torch.tensor(hash_keys, dtype=torch.int64, device=device),
+            return CSDHashTablePayload(
+                keys=hash_keys,
                 num_entries=len(set(key_list)),
                 capacity=capacity,
                 max_probe=max_probe,
             )
         capacity *= 2
+
+
+def build_csd_hash_table(
+    keys: Iterable[int],
+    device: torch.device | str,
+    max_probe: int = CSD_DEFAULT_MAX_PROBE,
+    load_factor: float = CSD_DEFAULT_LOAD_FACTOR,
+) -> CSDHashTable:
+    payload = build_csd_hash_table_payload(
+        keys=keys,
+        max_probe=max_probe,
+        load_factor=load_factor,
+    )
+    return materialize_csd_hash_table_payload(payload, device)
 
 
 def _try_build_hash_table(
@@ -366,6 +406,8 @@ class CSDRuntime:
     table_store: CSDTableStore = field(default_factory=CSDTableStore)
     delta_counts: Counter[int] = field(default_factory=Counter)
     delta_save_path: Optional[str] = None
+    online_rebuild_enabled: bool = False
+    rebuild_future: Optional[Future] = None
 
     @classmethod
     def from_server_args(
@@ -412,6 +454,10 @@ class CSDRuntime:
             delta_buffer=delta_buffer,
             table_store=table_store,
             delta_save_path=server_args.speculative_csd_delta_save_path,
+            online_rebuild_enabled=bool(
+                server_args.speculative_csd_dynamic_update
+                and server_args.speculative_csd_table_path is not None
+            ),
         )
 
     @property
@@ -440,6 +486,49 @@ class CSDRuntime:
         self.table_store.merge_counts(self.delta_counts)
         self.delta_counts.clear()
         self.table_store.save(path)
+
+    def maybe_apply_async_rebuild(
+        self,
+        device: torch.device | str,
+    ) -> bool:
+        if self.rebuild_future is None or not self.rebuild_future.done():
+            return False
+        payload = self.rebuild_future.result()
+        self.rebuild_future = None
+        self.table = materialize_csd_hash_table_payload(payload, device)
+        return True
+
+    def maybe_start_async_rebuild(
+        self,
+        freq_threshold: int,
+        rebuild_threshold: int,
+        max_probe: int = CSD_DEFAULT_MAX_PROBE,
+        load_factor: float = CSD_DEFAULT_LOAD_FACTOR,
+    ) -> bool:
+        if not self.online_rebuild_enabled or self.delta_buffer is None:
+            return False
+        if rebuild_threshold <= 0:
+            return False
+        if self.rebuild_future is not None and not self.rebuild_future.done():
+            return False
+        buffered_pair_count = min(int(self.delta_buffer.counter.item()), self.delta_buffer.capacity)
+        effective_rebuild_threshold = min(rebuild_threshold, self.delta_buffer.capacity)
+        if buffered_pair_count < effective_rebuild_threshold:
+            return False
+
+        counts = self.flush_delta()
+        if not counts:
+            return False
+        self.table_store.merge_counts(counts)
+        self.delta_counts.clear()
+        keys = self.table_store.filtered_keys(freq_threshold)
+        self.rebuild_future = _CSD_REBUILD_EXECUTOR.submit(
+            build_csd_hash_table_payload,
+            keys,
+            max_probe,
+            load_factor,
+        )
+        return True
 
     def rebuild_table(
         self,

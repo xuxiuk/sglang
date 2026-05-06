@@ -8,9 +8,9 @@ set -euo pipefail
 
 export HF_ENDPOINT=https://hf-mirror.com
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-REPO_ROOT=$(cd -- "${SCRIPT_DIR}/../.." && pwd)
+REPO_ROOT=$(cd -- "${SCRIPT_DIR}/../../.." && pwd)
 
-OUT_DIR=${OUT_DIR:-/home/zhouxuwen/sglang/benchmark/redpajama/csd_runs}
+OUT_DIR=${OUT_DIR:-/home/zhouxuwen/sglang/benchmark/csd/runs/redpajama}
 MODEL_PATH=${MODEL_PATH:-/home/shared/models/Qwen/Qwen3.5-35B-A3B}
 HOST=${HOST:-127.0.0.1}
 PORT=${PORT:-30002}
@@ -29,7 +29,7 @@ CSD_PROB_RATIO=${CSD_PROB_RATIO:-0.01}
 CSD_DELTA_CAPACITY=${CSD_DELTA_CAPACITY:-16777216}
 MEM_FRACTION_STATIC=${MEM_FRACTION_STATIC:-0.85}
 WATCHDOG_TIMEOUT=${WATCHDOG_TIMEOUT:-3000}
-SGLANG_TORCH_PROFILER_DIR=${SGLANG_TORCH_PROFILER_DIR:-/home/zhouxuwen/sglang/profiles}
+SGLANG_TORCH_PROFILER_DIR=${SGLANG_TORCH_PROFILER_DIR:-/home/zhouxuwen/sglang/benchmark/csd/runs/profiles}
 DATASET_NAME=${DATASET_NAME:-togethercomputer/RedPajama-Data-1T}
 DOMAINS=${DOMAINS:-"arxiv c4 common_crawl github stackexchange wikipedia"}
 PROMPT_CHARS=${PROMPT_CHARS:-4096}
@@ -38,7 +38,24 @@ MIN_PROMPT_CHARS=${MIN_PROMPT_CHARS:-128}
 mkdir -p "${OUT_DIR}"
 cd "${REPO_ROOT}"
 RESULT_FILE=${RESULT_FILE:-"${OUT_DIR}/result_redpajama_csd.jsonl"}
-CSD_TABLE_PATH=${CSD_TABLE_PATH:-"${OUT_DIR}/csd_table_redpajama_6domains_n${SAMPLES_PER_DOMAIN}_temp1_topk${SPEC_TOPK}_steps${SPEC_NUM_STEPS}_draft${SPEC_DRAFT_TOKENS}_freq${CSD_FREQ_THRESHOLD}_ratio${CSD_PROB_RATIO}.json"}
+safe_filename_part() {
+  local value="$1"
+  value="${value%/}"
+  value="${value##*/}"
+  value=$(printf '%s' "${value}" | tr -c 'A-Za-z0-9._-' '-')
+  value="${value#-}"
+  value="${value%-}"
+  if [[ -z "${value}" ]]; then
+    value="none"
+  fi
+  printf '%s' "${value}"
+}
+
+MODEL_NAME_PART=$(safe_filename_part "${MODEL_PATH}")
+DRAFT_MODEL_NAME=${DRAFT_MODEL_NAME:-mtp}
+DRAFT_MODEL_NAME_PART=$(safe_filename_part "${DRAFT_MODEL_NAME}")
+SPEC_ALGORITHM_PART=$(safe_filename_part "EAGLE")
+CSD_TABLE_PATH=${CSD_TABLE_PATH:-"${OUT_DIR}/csd_table_redpajama_6domains_n${SAMPLES_PER_DOMAIN}_${MODEL_NAME_PART}_${DRAFT_MODEL_NAME_PART}_${SPEC_ALGORITHM_PART}_temp${TEMPERATURE}_top_p${TOP_P}_topk${SPEC_TOPK}_steps${SPEC_NUM_STEPS}_draft${SPEC_DRAFT_TOKENS}_freq${CSD_FREQ_THRESHOLD}_ratio${CSD_PROB_RATIO}.json"}
 
 SERVER_PID=""
 SERVER_PGID=""
@@ -173,7 +190,7 @@ python benchmark/redpajama/bench_redpajama_csd.py \
   --answer-file "${OUT_DIR}/redpajama_csd_calibration_answer.jsonl" \
   --result-file "${RESULT_FILE}" \
   --model-name "${MODEL_PATH}" \
-  --draft-model-name mtp \
+  --draft-model-name "${DRAFT_MODEL_NAME}" \
   --run-tag "${run_id}" \
   --speculative-algorithm EAGLE \
   --speculative-num-steps "${SPEC_NUM_STEPS}" \
