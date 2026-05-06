@@ -107,9 +107,9 @@ CSD 在 verify kernel 中完成：
   - 导出 speculative / CSD metrics JSON 和 compact JSONL。
 
 - `benchmark/csd/eval/run_lighteval_sglang_native.py`
-  - 使用修改过的 LightEval in-process SGLang backend。
+  - 使用 `benchmark/csd/lighteval/` 中随 benchmark 一起提交的修改版 LightEval in-process SGLang backend。
   - 直接构造 `sglang.Engine(...)`，不走额外 HTTP `/generate` backend。
-  - 依赖本地 LightEval 修改来透传 SGLang speculative/CSD 参数、保留 `meta_info` 并导出和 lm-eval 对齐的 speculative / CSD 指标。
+  - 修改版 LightEval 负责透传 SGLang speculative/CSD 参数、保留 `meta_info` 并导出和 lm-eval 对齐的 speculative / CSD 指标。
 
 ## 主要参数
 
@@ -341,7 +341,13 @@ LIGHTEVAL_PYTHON=/home/zhouxuwen/miniconda3/envs/lighteval-sglang/bin/python \
   bash benchmark/csd/eval/run_lighteval_csd_experiment.sh
 ```
 
-这个入口需要使用本地修改过的 LightEval。对应修改在 `/home/zhouxuwen/lighteval`，主要包括 SGLang config 参数透传、`meta_info` 保留和 speculative/CSD metrics accumulator。
+这个入口默认使用随 CSD benchmark 提交的修改版 LightEval：
+
+```text
+benchmark/csd/lighteval/
+```
+
+也可以用 `LIGHTEVAL_SRC=/path/to/lighteval/src` 覆盖。修改版主要包括 SGLang config 参数透传、`meta_info` 保留和 speculative/CSD metrics accumulator。
 
 ## 关键指标
 

@@ -8,9 +8,10 @@ import sys
 import time
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+CSD_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 SGLANG_SRC = Path(os.environ.get("SGLANG_SRC", REPO_ROOT / "python"))
-LIGHTEVAL_SRC = Path(os.environ.get("LIGHTEVAL_SRC", "/home/zhouxuwen/lighteval/src"))
+LIGHTEVAL_SRC = Path(os.environ.get("LIGHTEVAL_SRC", CSD_ROOT / "lighteval"))
 for src_path in (SGLANG_SRC, LIGHTEVAL_SRC):
     if str(src_path) not in sys.path:
         sys.path.insert(0, str(src_path))
