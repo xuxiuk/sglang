@@ -276,16 +276,6 @@ verify 后：如果 delta buffer 达到 rebuild_threshold，就 flush delta 并�
 
 这里的“异步”指 hash table payload 在后台线程构建，避免每次触发 rebuild 时都把完整 CPU 构表同步塞进 verify 热路径。后台线程不直接创建 CUDA tensor；GPU tensor 创建和 table 替换仍然在 verify 边界由主线程完成。
 
-### Delta buffer 计数语义
-
-CUDA 侧 `delta_counter` 是 append 尝试次数，可能超过 `delta_capacity`。Python 侧实际可读取 pair 数是：
-
-```python
-min(delta_counter, delta_capacity)
-```
-
-因此在线 rebuild 触发判断基于实际可读取 pair 数，而不是单纯 counter。
-
 ## Hash table 构建逻辑
 
 CSD table 使用开放寻址 hash table。建表逻辑由以下参数控制：
@@ -300,13 +290,6 @@ filtered keys -> next_power_of_two(len(keys) / load_factor) -> linear probing in
 ```
 
 如果在当前 capacity 和 max_probe 下插入失败，会把 capacity 翻倍后重试。
-
-注意：`delta_capacity` 不直接影响 hash probe 次数。它只影响一次 flush 能从 GPU 收集多少 rejected pair。真正影响 hash table probe 的是：
-
-- key 数量
-- load factor
-- max probe
-- hash 分布
 
 ## 常用入口
 
@@ -337,8 +320,7 @@ bash benchmark/csd/eval/run_lm_eval_csd_experiment.sh
 LightEval CSD experiment：
 
 ```bash
-LIGHTEVAL_PYTHON=/home/zhouxuwen/miniconda3/envs/lighteval-sglang/bin/python \
-  bash benchmark/csd/eval/run_lighteval_csd_experiment.sh
+bash benchmark/csd/eval/run_lighteval_csd_experiment.sh
 ```
 
 这个入口使用随 CSD benchmark 提交的修改版 LightEval。先在对应 Python 环境里安装：
@@ -418,14 +400,6 @@ pip install -e python --no-deps
 pip install -e python --no-deps
 ```
 
-可以用下面命令确认实际加载的是当前环境中的 `sgl_kernel`：
-
-```bash
-python - <<'PY'
-import sgl_kernel
-print(sgl_kernel.__file__)
-print(sgl_kernel.__version__)
-PY
 ```
 
 ## 备注
@@ -433,4 +407,3 @@ PY
 - 每个 EAGLE worker / scheduler / TPModelWorker 持有自己的 `csd_runtime`，不额外增加 TP 同步。
 - record 阶段只向 GPU delta buffer 追加 pair，不在 verify 热路径里做 Python 回调。
 - online update 阶段的 rebuild 使用后台线程构建 CPU hash payload；CUDA tensor 创建和 table 替换仍然在 verify 边界完成。
-- `benchmark/csd/` 中保留的是集中后的脚本和 README；原始文件暂未删除，避免破坏已有命令、历史结果或 notebook 引用。
