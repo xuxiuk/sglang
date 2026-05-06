@@ -286,7 +286,6 @@ class SGLangNativeLM(LocalCompletionsAPI):
 
         total = len(metrics)
         avg_accept_length = sum(m["spec_accept_length"] for m in metrics) / total
-        avg_accept_rate = sum(m["spec_accept_rate"] for m in metrics) / total
         total_csd_hits = sum(m["csd_lookup_hit_ct"] for m in metrics)
         total_csd_forced = sum(m["csd_forced_accept_ct"] for m in metrics)
         total_csd_delta = sum(m["csd_delta_pair_ct"] for m in metrics)
@@ -296,9 +295,14 @@ class SGLangNativeLM(LocalCompletionsAPI):
         total_spec_accept_tokens = sum(m["spec_accept_token_num"] for m in metrics)
         total_spec_draft_tokens = sum(m["spec_draft_token_num"] for m in metrics)
         spec_num_steps = max((m["speculative_num_steps"] for m in metrics), default=0)
-        aggregate_accept_rate = (
-            total_spec_accept_tokens / total_spec_draft_tokens
-            if total_spec_draft_tokens
+        avg_accept_rate = (
+            sum(
+                (m["spec_accept_length"] - 1) / m["speculative_num_steps"]
+                for m in metrics
+                if m["speculative_num_steps"]
+            )
+            / total
+            if spec_num_steps
             else 0
         )
         aggregate_accept_length = (
@@ -322,7 +326,7 @@ class SGLangNativeLM(LocalCompletionsAPI):
             "avg_spec_accept_length": round(avg_accept_length, 4),
             "aggregate_spec_accept_length": round(aggregate_accept_length, 4),
             "avg_spec_accept_rate": round(avg_accept_rate, 4),
-            "aggregate_spec_accept_rate": round(aggregate_accept_rate, 4),
+            "aggregate_spec_accept_rate": round(spec_success_rate, 4),
             "spec_success_rate": round(spec_success_rate, 4),
             "avg_spec_success_rate": round(spec_success_rate, 4),
             "speculative_num_steps": spec_num_steps,
@@ -344,7 +348,7 @@ class SGLangNativeLM(LocalCompletionsAPI):
         print(f"Total requests:           {total}")
         print(f"Avg spec accept length:   {avg_accept_length:.4f}")
         print(f"Avg spec accept rate:     {avg_accept_rate:.4f}")
-        print(f"Aggregate accept rate:    {aggregate_accept_rate:.4f}")
+        print(f"Aggregate accept rate:    {spec_success_rate:.4f}")
         print(f"Output token saved ratio: {spec_output_token_saved_ratio:.4f}")
         print(f"Total spec verify ct:     {total_spec_verify_ct}")
         print(f"Total spec accept tokens: {total_spec_accept_tokens}")
