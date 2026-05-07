@@ -27,6 +27,7 @@ SPEC_DRAFT_TOKENS=${SPEC_DRAFT_TOKENS:-15}
 CSD_FREQ_THRESHOLD=${CSD_FREQ_THRESHOLD:-3}
 CSD_PROB_RATIO=${CSD_PROB_RATIO:-0.01}
 CSD_DELTA_CAPACITY=${CSD_DELTA_CAPACITY:-16777216}
+DRAFT_MODEL_NAME=${DRAFT_MODEL_NAME:-mtp}
 MEM_FRACTION_STATIC=${MEM_FRACTION_STATIC:-0.85}
 WATCHDOG_TIMEOUT=${WATCHDOG_TIMEOUT:-3000}
 SGLANG_TORCH_PROFILER_DIR=${SGLANG_TORCH_PROFILER_DIR:-/home/zhouxuwen/sglang/profiles}
@@ -38,7 +39,21 @@ MIN_PROMPT_CHARS=${MIN_PROMPT_CHARS:-128}
 mkdir -p "${OUT_DIR}"
 cd "${REPO_ROOT}"
 RESULT_FILE=${RESULT_FILE:-"${OUT_DIR}/result_redpajama_csd.jsonl"}
-CSD_TABLE_PATH=${CSD_TABLE_PATH:-"${OUT_DIR}/csd_table_redpajama_6domains_n${SAMPLES_PER_DOMAIN}_temp1_topk${SPEC_TOPK}_steps${SPEC_NUM_STEPS}_draft${SPEC_DRAFT_TOKENS}_freq${CSD_FREQ_THRESHOLD}_ratio${CSD_PROB_RATIO}.json"}
+safe_filename_part() {
+  local value="$1"
+  value="${value%/}"
+  value="${value##*/}"
+  value=$(printf '%s' "${value}" | tr -c 'A-Za-z0-9._-' '-')
+  value="${value#-}"
+  value="${value%-}"
+  if [[ -z "${value}" ]]; then
+    value="none"
+  fi
+  printf '%s' "${value}"
+}
+MODEL_NAME_PART=$(safe_filename_part "${MODEL_PATH}")
+DRAFT_MODEL_NAME_PART=$(safe_filename_part "${DRAFT_MODEL_NAME}")
+CSD_TABLE_PATH=${CSD_TABLE_PATH:-"${OUT_DIR}/csd_table_redpajama_6domains_n${SAMPLES_PER_DOMAIN}_${MODEL_NAME_PART}_${DRAFT_MODEL_NAME_PART}_EAGLE_temp${TEMPERATURE}.json"}
 
 SERVER_PID=""
 SERVER_PGID=""
@@ -154,7 +169,7 @@ start_record_server() {
 
 trap cleanup_server EXIT
 
-run_id="redpajama_temp1_6domains_n${SAMPLES_PER_DOMAIN}_topk${SPEC_TOPK}_steps${SPEC_NUM_STEPS}_draft${SPEC_DRAFT_TOKENS}"
+run_id="redpajama_temp${TEMPERATURE}_6domains_n${SAMPLES_PER_DOMAIN}"
 start_record_server "${run_id}"
 
 python benchmark/redpajama/bench_redpajama_csd.py \
@@ -173,7 +188,7 @@ python benchmark/redpajama/bench_redpajama_csd.py \
   --answer-file "${OUT_DIR}/redpajama_csd_calibration_answer.jsonl" \
   --result-file "${RESULT_FILE}" \
   --model-name "${MODEL_PATH}" \
-  --draft-model-name mtp \
+  --draft-model-name "${DRAFT_MODEL_NAME}" \
   --run-tag "${run_id}" \
   --speculative-algorithm EAGLE \
   --speculative-num-steps "${SPEC_NUM_STEPS}" \

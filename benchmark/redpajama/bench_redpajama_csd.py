@@ -85,8 +85,8 @@ def _default_csd_table_path(args):
         f"n{args.samples_per_domain}_x{len(args.domains)}",
         _safe_filename_part(args.model_name),
         _safe_filename_part(_draft_model_name(args)),
+        _safe_filename_part(args.speculative_algorithm),
         f"temp{args.temperature:g}",
-        f"top_p{args.top_p:g}",
     ]
     if args.run_tag:
         parts.append(args.run_tag)

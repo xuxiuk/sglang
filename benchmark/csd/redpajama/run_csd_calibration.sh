@@ -55,7 +55,7 @@ MODEL_NAME_PART=$(safe_filename_part "${MODEL_PATH}")
 DRAFT_MODEL_NAME=${DRAFT_MODEL_NAME:-mtp}
 DRAFT_MODEL_NAME_PART=$(safe_filename_part "${DRAFT_MODEL_NAME}")
 SPEC_ALGORITHM_PART=$(safe_filename_part "EAGLE")
-CSD_TABLE_PATH=${CSD_TABLE_PATH:-"${OUT_DIR}/csd_table_redpajama_6domains_n${SAMPLES_PER_DOMAIN}_${MODEL_NAME_PART}_${DRAFT_MODEL_NAME_PART}_${SPEC_ALGORITHM_PART}_temp${TEMPERATURE}_top_p${TOP_P}_topk${SPEC_TOPK}_steps${SPEC_NUM_STEPS}_draft${SPEC_DRAFT_TOKENS}_freq${CSD_FREQ_THRESHOLD}_ratio${CSD_PROB_RATIO}.json"}
+CSD_TABLE_PATH=${CSD_TABLE_PATH:-"${OUT_DIR}/csd_table_redpajama_6domains_n${SAMPLES_PER_DOMAIN}_${MODEL_NAME_PART}_${DRAFT_MODEL_NAME_PART}_${SPEC_ALGORITHM_PART}_temp${TEMPERATURE}.json"}
 
 SERVER_PID=""
 SERVER_PGID=""
@@ -171,10 +171,10 @@ start_record_server() {
 
 trap cleanup_server EXIT
 
-run_id="redpajama_temp1_6domains_n${SAMPLES_PER_DOMAIN}_topk${SPEC_TOPK}_steps${SPEC_NUM_STEPS}_draft${SPEC_DRAFT_TOKENS}"
+run_id="redpajama_temp${TEMPERATURE}_6domains_n${SAMPLES_PER_DOMAIN}"
 start_record_server "${run_id}"
 
-python benchmark/redpajama/bench_redpajama_csd.py \
+python benchmark/csd/redpajama/bench_redpajama_csd.py \
   --dataset-name "${DATASET_NAME}" \
   --domains ${DOMAINS} \
   --samples-per-domain "${SAMPLES_PER_DOMAIN}" \

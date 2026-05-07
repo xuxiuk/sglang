@@ -87,12 +87,6 @@ def _default_csd_table_path(args):
         _safe_filename_part(_draft_model_name(args)),
         _safe_filename_part(args.speculative_algorithm),
         f"temp{args.temperature:g}",
-        f"top_p{args.top_p:g}",
-        f"topk{args.speculative_eagle_topk}",
-        f"steps{args.speculative_num_steps}",
-        f"draft{args.speculative_num_draft_tokens}",
-        f"freq{args.csd_freq_threshold}",
-        f"ratio{args.csd_prob_ratio}",
     ]
     if args.run_tag:
         parts.append(args.run_tag)
