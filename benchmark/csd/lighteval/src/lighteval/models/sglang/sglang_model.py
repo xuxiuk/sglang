@@ -22,7 +22,7 @@
 
 import gc
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 from pydantic import PositiveFloat, PositiveInt
@@ -147,6 +147,7 @@ class SGLangModelConfig(ModelConfig):
     log_level: str | None = None
     override_chat_template: bool | None = None
     collect_spec_metrics: bool = True
+    use_sample_cache: bool = True
     speculative_algorithm: str | None = None
     speculative_num_steps: PositiveInt | None = None
     speculative_eagle_topk: PositiveInt | None = None
@@ -158,6 +159,8 @@ class SGLangModelConfig(ModelConfig):
     speculative_csd_prob_ratio: PositiveFloat | None = None
     speculative_csd_dynamic_update: bool = False
     speculative_csd_force_accept_disabled: bool = False
+    speculative_csd_save_table_path: str | None = None
+    speculative_csd_save_table_metadata: dict[str, Any] | None = None
 
 
 class SGLangModel(LightevalModel):
@@ -190,7 +193,7 @@ class SGLangModel(LightevalModel):
         self.prompt_manager = PromptManager(self.use_chat_template, self.tokenizer, config.system_prompt)
 
         # Initialize cache for tokenization and predictions
-        self._cache = SampleCache(config)
+        self._cache = SampleCache(config) if config.use_sample_cache else None
 
     @property
     def tokenizer(self):
@@ -198,7 +201,14 @@ class SGLangModel(LightevalModel):
 
     def cleanup(self):
         if self.model is not None:
-            self.model.shutdown()
+            try:
+                if self.config.speculative_csd_save_table_path:
+                    self.save_csd_table(
+                        self.config.speculative_csd_save_table_path,
+                        self.config.speculative_csd_save_table_metadata,
+                    )
+            finally:
+                self.model.shutdown()
 
         self.model = None
         gc.collect()
@@ -368,6 +378,9 @@ class SGLangModel(LightevalModel):
 
     def save_spec_metrics(self, path):
         return self.metrics_accumulator.save(path)
+
+    def save_csd_table(self, path: str, metadata: dict[str, Any] | None = None):
+        self.model.save_csd_table(path=path, metadata=metadata)
 
     @requires("sglang")
     def _generate(

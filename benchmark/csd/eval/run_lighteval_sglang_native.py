@@ -76,6 +76,7 @@ def parse_args():
     parser.add_argument("--system-prompt", default=None)
     parser.add_argument("--gen-kwargs", default=None)
     parser.add_argument("--save-details", action="store_true")
+    parser.add_argument("--disable-sample-cache", action="store_true")
     parser.add_argument("--dataset-loading-processes", type=int, default=1)
     parser.add_argument("--custom-tasks", default=None)
     parser.add_argument("--num-fewshot-seeds", type=int, default=1)
@@ -88,6 +89,7 @@ def parse_args():
     parser.add_argument("--speculative-eagle-topk", type=int, default=None)
     parser.add_argument("--speculative-num-draft-tokens", type=int, default=None)
     parser.add_argument("--csd-table-path", default=None)
+    parser.add_argument("--csd-save-table-path", default=None)
     parser.add_argument("--csd-freq-threshold", type=int, default=None)
     parser.add_argument("--csd-prob-ratio", type=float, default=None)
     parser.add_argument("--csd-dynamic-update", action="store_true")
@@ -153,6 +155,7 @@ def _run_config(args):
         "max_length": args.max_length,
         "trust_remote_code": args.trust_remote_code,
         "gen_kwargs": args.gen_kwargs,
+        "disable_sample_cache": args.disable_sample_cache,
         "eval_framework": "lighteval",
         "speculative": {
             "algorithm": args.speculative_algorithm,
@@ -163,6 +166,7 @@ def _run_config(args):
         "csd": {
             "enabled": args.csd_enabled,
             "table_path": args.csd_table_path,
+            "save_table_path": args.csd_save_table_path,
             "freq_threshold": args.csd_freq_threshold,
             "prob_ratio": args.csd_prob_ratio,
             "dynamic_update": args.csd_dynamic_update,
@@ -171,7 +175,7 @@ def _run_config(args):
     }
 
 
-def _server_config(args, engine_args=None):
+def _server_config(args):
     return {
         "speculative_algorithm": args.speculative_algorithm,
         "speculative_num_steps": args.speculative_num_steps,
@@ -181,6 +185,7 @@ def _server_config(args, engine_args=None):
         "speculative_csd_dynamic_update": args.csd_dynamic_update,
         "speculative_csd_force_accept_disabled": args.csd_force_accept_disabled,
         "speculative_csd_table_path": args.csd_table_path,
+        "speculative_csd_save_table_path": args.csd_save_table_path,
         "speculative_csd_freq_threshold": args.csd_freq_threshold,
         "speculative_csd_prob_ratio": args.csd_prob_ratio,
         "tp_size": args.tensor_parallel_size,
@@ -191,7 +196,6 @@ def _server_config(args, engine_args=None):
         "watchdog_timeout": args.watchdog_timeout,
         "mamba_scheduler_strategy": args.mamba_scheduler_strategy,
         "log_level": args.log_level,
-        "engine_args": engine_args,
     }
 
 
@@ -316,7 +320,6 @@ def _compact_result_rows(results, args):
                 "performance": performance,
                 "speculative_metrics": {key: value for key, value in spec.items() if key != "per_request_metrics"},
                 "server_config": server_config,
-                "config_tasks": results.get("config_tasks", {}),
             },
         }
         rows.append(row)
@@ -356,6 +359,7 @@ def _build_model_config(args):
         override_chat_template=_override_chat_template(args.override_chat_template),
         system_prompt=args.system_prompt,
         generation_parameters=generation_parameters,
+        use_sample_cache=not args.disable_sample_cache,
         speculative_algorithm=args.speculative_algorithm,
         speculative_num_steps=args.speculative_num_steps,
         speculative_eagle_topk=args.speculative_eagle_topk,
@@ -366,6 +370,8 @@ def _build_model_config(args):
         speculative_csd_prob_ratio=args.csd_prob_ratio if args.csd_enabled else None,
         speculative_csd_dynamic_update=args.csd_dynamic_update,
         speculative_csd_force_accept_disabled=args.csd_force_accept_disabled,
+        speculative_csd_save_table_path=args.csd_save_table_path,
+        speculative_csd_save_table_metadata=_run_config(args) if args.csd_save_table_path else None,
     )
 
 
@@ -375,6 +381,10 @@ def main():
         os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_devices
     output_path = Path(args.output_path)
     metrics_path = Path(args.metrics_output_path)
+    if args.csd_save_table_path and Path(args.csd_save_table_path).exists():
+        raise FileExistsError(f"Refusing to overwrite existing CSD table: {args.csd_save_table_path}")
+    if args.csd_save_table_path:
+        Path(args.csd_save_table_path).parent.mkdir(parents=True, exist_ok=True)
     output_dir = args.output_dir or str(output_path.parent / "lighteval_tracker")
 
     model_config = _build_model_config(args)
@@ -425,8 +435,7 @@ def main():
     }
 
     run_config = _run_config(args)
-    engine_args = getattr(pipeline.model, "model_args", None)
-    server_config = _server_config(args, engine_args=engine_args)
+    server_config = _server_config(args)
     results.setdefault("sglang", {})
     results["sglang"].update(
         {
