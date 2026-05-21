@@ -508,6 +508,10 @@ class ServerArgs:
     speculative_csd_delta_capacity: Optional[int] = None
     speculative_csd_rebuild_threshold: int = 4096
     speculative_csd_force_accept_disabled: bool = False
+    speculative_csd_debug_stats: bool = False
+    speculative_csd_debug_event_capacity: int = 1 << 20
+    speculative_csd_debug_sample_rate: int = 1000
+    speculative_csd_debug_save_path: Optional[str] = None
     speculative_token_map: Optional[str] = None
     speculative_attention_mode: str = "prefill"
     speculative_draft_attention_backend: Optional[str] = None
@@ -2997,9 +3001,9 @@ class ServerArgs:
                 raise ValueError(
                     "--speculative-csd-freq-threshold must be at least 1."
                 )
-            if not 0 < self.speculative_csd_prob_ratio <= 1:
+            if not 0 <= self.speculative_csd_prob_ratio <= 1:
                 raise ValueError(
-                    "--speculative-csd-prob-ratio must be in the range (0, 1]."
+                    "--speculative-csd-prob-ratio must be in the range [0, 1]; 0 disables the logits gate."
                 )
             if (
                 not self.speculative_csd_dynamic_update
@@ -3021,6 +3025,14 @@ class ServerArgs:
             if self.speculative_csd_delta_capacity < 1:
                 raise ValueError(
                     "--speculative-csd-delta-capacity must be at least 1."
+                )
+            if self.speculative_csd_debug_event_capacity < 1:
+                raise ValueError(
+                    "--speculative-csd-debug-event-capacity must be at least 1."
+                )
+            if self.speculative_csd_debug_sample_rate < 1:
+                raise ValueError(
+                    "--speculative-csd-debug-sample-rate must be at least 1."
                 )
             if (
                 self.speculative_csd_dynamic_update
@@ -4885,7 +4897,7 @@ class ServerArgs:
             "--speculative-csd-prob-ratio",
             type=float,
             default=ServerArgs.speculative_csd_prob_ratio,
-            help="Minimum target-model probability ratio p(draft) / p(target) required for CSD acceptance.",
+            help="Minimum target-model probability ratio p(draft) / p(max-target-token) required for CSD acceptance; set 0 to disable the logits gate.",
         )
         parser.add_argument(
             "--speculative-csd-dynamic-update",
@@ -4916,6 +4928,30 @@ class ServerArgs:
             action="store_true",
             default=ServerArgs.speculative_csd_force_accept_disabled,
             help="Record CSD candidate pairs without changing acceptance decisions.",
+        )
+        parser.add_argument(
+            "--speculative-csd-debug-stats",
+            action="store_true",
+            default=ServerArgs.speculative_csd_debug_stats,
+            help="Record debug statistics for CSD delta pairs and sampled force-accept events.",
+        )
+        parser.add_argument(
+            "--speculative-csd-debug-event-capacity",
+            type=int,
+            default=ServerArgs.speculative_csd_debug_event_capacity,
+            help="Maximum number of sampled CSD force-accept debug events buffered before saving.",
+        )
+        parser.add_argument(
+            "--speculative-csd-debug-sample-rate",
+            type=int,
+            default=ServerArgs.speculative_csd_debug_sample_rate,
+            help="Record one CSD force-accept debug event every N forced accepts.",
+        )
+        parser.add_argument(
+            "--speculative-csd-debug-save-path",
+            type=str,
+            default=ServerArgs.speculative_csd_debug_save_path,
+            help="Optional JSONL path for sampled CSD force-accept debug events.",
         )
         parser.add_argument(
             "--speculative-token-map",

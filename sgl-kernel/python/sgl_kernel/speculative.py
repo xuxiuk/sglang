@@ -22,6 +22,15 @@ def tree_speculative_sampling_target_only(
     csd_lookup_hit_ct: torch.Tensor | None = None,
     csd_forced_accept_ct: torch.Tensor | None = None,
     csd_delta_pair_ct: torch.Tensor | None = None,
+    csd_delta_float_stats: torch.Tensor | None = None,
+    csd_delta_int_stats: torch.Tensor | None = None,
+    csd_debug_event_pairs: torch.Tensor | None = None,
+    csd_debug_event_float_stats: torch.Tensor | None = None,
+    csd_debug_event_int_stats: torch.Tensor | None = None,
+    csd_debug_event_counter: torch.Tensor | None = None,
+    csd_debug_event_capacity: int = 0,
+    csd_debug_sample_rate: int = 1,
+    csd_debug_stats_enabled: bool = False,
     csd_table_capacity: int = 0,
     csd_table_max_probe: int = 0,
     csd_delta_capacity: int = 0,
@@ -39,7 +48,7 @@ def tree_speculative_sampling_target_only(
             raise ValueError("target_logits is required when csd_enabled is True")
         target_logits = target_probs
     if csd_logit_margin is None:
-        csd_logit_margin = math.log(csd_prob_ratio)
+        csd_logit_margin = math.log(csd_prob_ratio) if csd_prob_ratio > 0 else float("-inf")
     if csd_table_keys is None:
         csd_table_keys = torch.empty((1,), dtype=torch.int64, device=target_probs.device)
     if csd_delta_pairs is None:
@@ -52,6 +61,18 @@ def tree_speculative_sampling_target_only(
         csd_forced_accept_ct = torch.zeros((1,), dtype=torch.int64, device=target_probs.device)
     if csd_delta_pair_ct is None:
         csd_delta_pair_ct = torch.zeros((1,), dtype=torch.int64, device=target_probs.device)
+    if csd_delta_float_stats is None:
+        csd_delta_float_stats = torch.empty((1, 7), dtype=torch.float32, device=target_probs.device)
+    if csd_delta_int_stats is None:
+        csd_delta_int_stats = torch.empty((1, 2), dtype=torch.int32, device=target_probs.device)
+    if csd_debug_event_pairs is None:
+        csd_debug_event_pairs = torch.empty((1,), dtype=torch.int64, device=target_probs.device)
+    if csd_debug_event_float_stats is None:
+        csd_debug_event_float_stats = torch.empty((1, 7), dtype=torch.float32, device=target_probs.device)
+    if csd_debug_event_int_stats is None:
+        csd_debug_event_int_stats = torch.empty((1, 2), dtype=torch.int32, device=target_probs.device)
+    if csd_debug_event_counter is None:
+        csd_debug_event_counter = torch.zeros((1,), dtype=torch.int32, device=target_probs.device)
 
     torch.ops.sgl_kernel.tree_speculative_sampling_target_only.default(
         predicts,
@@ -72,6 +93,15 @@ def tree_speculative_sampling_target_only(
         csd_lookup_hit_ct,
         csd_forced_accept_ct,
         csd_delta_pair_ct,
+        csd_delta_float_stats,
+        csd_delta_int_stats,
+        csd_debug_event_pairs,
+        csd_debug_event_float_stats,
+        csd_debug_event_int_stats,
+        csd_debug_event_counter,
+        csd_debug_event_capacity,
+        csd_debug_sample_rate,
+        csd_debug_stats_enabled,
         csd_table_capacity,
         csd_table_max_probe,
         csd_delta_capacity,
@@ -117,7 +147,7 @@ def verify_tree_greedy(
             (*target_predict.shape, 1), dtype=torch.float32, device=target_predict.device
         )
     if csd_logit_margin is None:
-        csd_logit_margin = math.log(csd_prob_ratio)
+        csd_logit_margin = math.log(csd_prob_ratio) if csd_prob_ratio > 0 else float("-inf")
     if csd_table_keys is None:
         csd_table_keys = torch.empty((1,), dtype=torch.int64, device=target_predict.device)
     if csd_delta_pairs is None:

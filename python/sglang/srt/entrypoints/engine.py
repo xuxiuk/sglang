@@ -1084,6 +1084,9 @@ class Engine(EngineScoreMixin, EngineBase):
     def save_csd_table(self, **kwargs):
         self.collective_rpc("save_csd_table", **kwargs)
 
+    def save_csd_debug_events(self, **kwargs):
+        self.collective_rpc("save_csd_debug_events", **kwargs)
+
     # score() and async_score() are provided by EngineScoreMixin
 
 

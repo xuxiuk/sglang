@@ -66,6 +66,8 @@ from sglang.srt.managers.io_struct import (
     ReleaseMemoryOccupationReqOutput,
     ResumeMemoryOccupationReqInput,
     ResumeMemoryOccupationReqOutput,
+    SaveCSDDebugReqInput,
+    SaveCSDDebugReqOutput,
     SaveCSDTableReqInput,
     SaveCSDTableReqOutput,
     SendWeightsToRemoteInstanceReqInput,
@@ -243,6 +245,9 @@ class TokenizerCommunicatorMixin:
         self.save_csd_table_communicator = _Communicator(
             self.send_to_scheduler, server_args.dp_size
         )
+        self.save_csd_debug_events_communicator = _Communicator(
+            self.send_to_scheduler, server_args.dp_size
+        )
 
         self._result_dispatcher += self._get_communicator_dispatcher()
 
@@ -348,6 +353,10 @@ class TokenizerCommunicatorMixin:
                 (
                     SaveCSDTableReqOutput,
                     self.save_csd_table_communicator.handle_recv,
+                ),
+                (
+                    SaveCSDDebugReqOutput,
+                    self.save_csd_debug_events_communicator.handle_recv,
                 ),
             ]
         )
@@ -902,6 +911,15 @@ class TokenizerCommunicatorMixin:
     ) -> Tuple[bool, str]:
         self.auto_create_handle_loop()
         results = await self.save_csd_table_communicator(obj)
+        return _Communicator.merge_results(results)
+
+    async def save_csd_debug_events(
+        self: TokenizerManager,
+        obj: SaveCSDDebugReqInput,
+        request: Optional[fastapi.Request] = None,
+    ) -> Tuple[bool, str]:
+        self.auto_create_handle_loop()
+        results = await self.save_csd_debug_events_communicator(obj)
         return _Communicator.merge_results(results)
 
     async def get_load(self: TokenizerManager) -> List[GetLoadReqOutput]:

@@ -719,6 +719,12 @@ class EAGLEWorker(TpModelWorker):
         self.csd_runtime.save_table(path)
         return True
 
+    def save_csd_debug_events(self, path: Optional[str] = None) -> bool:
+        if not self.csd_runtime.enabled:
+            return False
+        self.csd_runtime.save_debug_events(path)
+        return True
+
     def verify(self, batch: ScheduleBatch, spec_info: EagleVerifyInput):
         seq_lens_pre_verify = batch.seq_lens.clone()
         spec_info.prepare_for_verify(batch, self.page_size)

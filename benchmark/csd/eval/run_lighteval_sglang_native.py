@@ -48,6 +48,7 @@ def parse_args():
     parser.add_argument("--output-path", default="lighteval_sglang_native_results.json")
     parser.add_argument("--metrics-output-path", default="lighteval_sglang_native_metrics.json")
     parser.add_argument("--result-jsonl-path", default=None)
+    parser.add_argument("--sample-output-jsonl-path", default=None)
     parser.add_argument("--run-tag", default=None)
     parser.add_argument("--experiment-config-json", default=None)
     parser.add_argument("--mode", default=None)
@@ -95,6 +96,10 @@ def parse_args():
     parser.add_argument("--csd-dynamic-update", action="store_true")
     parser.add_argument("--csd-force-accept-disabled", action="store_true")
     parser.add_argument("--csd-enabled", action="store_true")
+    parser.add_argument("--csd-debug-stats", action="store_true")
+    parser.add_argument("--csd-debug-event-capacity", type=int, default=None)
+    parser.add_argument("--csd-debug-sample-rate", type=int, default=None)
+    parser.add_argument("--csd-debug-save-path", default=None)
     return parser.parse_args()
 
 
@@ -169,6 +174,10 @@ def _run_config(args):
             "save_table_path": args.csd_save_table_path,
             "freq_threshold": args.csd_freq_threshold,
             "prob_ratio": args.csd_prob_ratio,
+            "debug_stats": args.csd_debug_stats,
+            "debug_event_capacity": args.csd_debug_event_capacity,
+            "debug_sample_rate": args.csd_debug_sample_rate,
+            "debug_save_path": args.csd_debug_save_path,
             "dynamic_update": args.csd_dynamic_update,
             "force_accept_disabled": args.csd_force_accept_disabled,
         },
@@ -188,6 +197,10 @@ def _server_config(args):
         "speculative_csd_save_table_path": args.csd_save_table_path,
         "speculative_csd_freq_threshold": args.csd_freq_threshold,
         "speculative_csd_prob_ratio": args.csd_prob_ratio,
+        "speculative_csd_debug_stats": args.csd_debug_stats,
+        "speculative_csd_debug_event_capacity": args.csd_debug_event_capacity,
+        "speculative_csd_debug_sample_rate": args.csd_debug_sample_rate,
+        "speculative_csd_debug_save_path": args.csd_debug_save_path,
         "tp_size": args.tensor_parallel_size,
         "dp_size": args.data_parallel_size,
         "mem_fraction_static": args.mem_fraction_static,
@@ -254,6 +267,10 @@ def _num_requests(results, task_name):
             return count
     spec = results.get("sglang", {}).get("speculative_metrics") or {}
     return spec.get("total_requests")
+
+
+def _json_safe(value):
+    return json.loads(json.dumps(value, cls=EnhancedJSONEncoder, ensure_ascii=False))
 
 
 def _compact_result_rows(results, args):
@@ -326,6 +343,34 @@ def _compact_result_rows(results, args):
     return rows
 
 
+def _write_sample_outputs(path, evaluation_tracker, args):
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as f:
+        for task_name, task_details in evaluation_tracker.details.items():
+            for sample_idx, detail in enumerate(task_details):
+                doc = detail.get("doc", {}) or {}
+                model_response = detail.get("model_response", {}) or {}
+                row = {
+                    "task": task_name,
+                    "sample_idx": sample_idx,
+                    "run_tag": args.run_tag,
+                    "mode": args.mode,
+                    "query": doc.get("query"),
+                    "ctx": doc.get("ctx"),
+                    "choices": doc.get("choices"),
+                    "gold_index": doc.get("gold_index"),
+                    "specific": doc.get("specific"),
+                    "model_text": model_response.get("text"),
+                    "final_text": model_response.get("final_text"),
+                    "input_tokens": model_response.get("input_tokens"),
+                    "output_tokens": model_response.get("output_tokens"),
+                    "metric": detail.get("metric"),
+                }
+                f.write(json.dumps(_json_safe(row), ensure_ascii=False) + "\n")
+    print(f"LightEval per-sample outputs saved to {output_path}")
+
+
 def _override_chat_template(value):
     if value == "auto":
         return None
@@ -370,6 +415,10 @@ def _build_model_config(args):
         speculative_csd_prob_ratio=args.csd_prob_ratio if args.csd_enabled else None,
         speculative_csd_dynamic_update=args.csd_dynamic_update,
         speculative_csd_force_accept_disabled=args.csd_force_accept_disabled,
+        speculative_csd_debug_stats=args.csd_debug_stats,
+        speculative_csd_debug_event_capacity=args.csd_debug_event_capacity,
+        speculative_csd_debug_sample_rate=args.csd_debug_sample_rate,
+        speculative_csd_debug_save_path=args.csd_debug_save_path,
         speculative_csd_save_table_path=args.csd_save_table_path,
         speculative_csd_save_table_metadata=_run_config(args) if args.csd_save_table_path else None,
     )
@@ -418,6 +467,10 @@ def main():
     results = pipeline.get_results()
 
     spec_summary = pipeline.model.get_spec_metrics()
+    if args.csd_debug_save_path:
+        flush_csd_debug_events = getattr(pipeline.model, "flush_csd_debug_events", None)
+        if flush_csd_debug_events is not None:
+            flush_csd_debug_events()
     if spec_summary is not None:
         metrics_path.write_text(json.dumps(spec_summary, indent=2), encoding="utf-8")
         print(f"LightEval SGLang metrics saved to {metrics_path}")
@@ -452,6 +505,9 @@ def main():
         encoding="utf-8",
     )
     print(f"LightEval results saved to {output_path}")
+
+    if args.sample_output_jsonl_path:
+        _write_sample_outputs(args.sample_output_jsonl_path, evaluation_tracker, args)
 
     if args.result_jsonl_path:
         result_jsonl_path = Path(args.result_jsonl_path)

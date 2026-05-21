@@ -19,6 +19,7 @@
 
 #include <assert.h>
 #include <float.h>
+#include <math.h>
 
 #include <flashinfer/sampling.cuh>
 
@@ -29,6 +30,9 @@ namespace sampling {
 using namespace cub;
 
 static constexpr int64_t CSD_EMPTY_KEY = -1;
+static constexpr uint32_t CSD_DEBUG_EVENT_DELTA = 1;
+static constexpr uint32_t CSD_DEBUG_EVENT_FORCE_ACCEPT = 2;
+static constexpr uint32_t CSD_DEBUG_NUM_FLOAT_STATS = 7;
 
 template <typename T>
 struct CsdMaxOp {
@@ -74,21 +78,52 @@ __device__ __forceinline__ void CsdAtomicAddI64(int64_t* value, unsigned long lo
   atomicAdd(reinterpret_cast<unsigned long long*>(value), increment);
 }
 
-__device__ __forceinline__ void CsdAppendDelta(
+__device__ __forceinline__ void CsdWriteDebugStats(
+    float* float_stats,
+    int32_t* int_stats,
+    int32_t pos,
+    uint32_t capacity,
+    uint32_t event_flag,
+    uint32_t spec_step,
+    float draft_prob,
+    float resampled_prob,
+    float max_prob,
+    float target_entropy,
+    float normalized_entropy,
+    float logit_margin_to_max,
+    float pair_logit_margin) {
+  if (float_stats == nullptr || int_stats == nullptr || pos < 0 || static_cast<uint32_t>(pos) >= capacity) {
+    return;
+  }
+  uint32_t stat_offset = static_cast<uint32_t>(pos) * CSD_DEBUG_NUM_FLOAT_STATS;
+  float_stats[stat_offset + 0] = draft_prob;
+  float_stats[stat_offset + 1] = resampled_prob;
+  float_stats[stat_offset + 2] = max_prob;
+  float_stats[stat_offset + 3] = target_entropy;
+  float_stats[stat_offset + 4] = normalized_entropy;
+  float_stats[stat_offset + 5] = logit_margin_to_max;
+  float_stats[stat_offset + 6] = pair_logit_margin;
+  int_stats[static_cast<uint32_t>(pos) * 2] = static_cast<int32_t>(event_flag);
+  int_stats[static_cast<uint32_t>(pos) * 2 + 1] = static_cast<int32_t>(spec_step);
+}
+
+__device__ __forceinline__ int32_t CsdAppendDelta(
     int64_t* delta_pairs,
     int32_t* delta_counter,
     int64_t* delta_pair_ct,
     uint32_t delta_capacity,
     int64_t key) {
   if (delta_capacity == 0 || key == CSD_EMPTY_KEY) {
-    return;
+    return -1;
   }
 
   int32_t pos = atomicAdd(delta_counter, 1);
   if (pos >= 0 && static_cast<uint32_t>(pos) < delta_capacity) {
     delta_pairs[pos] = key;
     CsdAtomicAddI64(delta_pair_ct, 1ULL);
+    return pos;
   }
+  return -1;
 }
 
 template <
@@ -109,10 +144,15 @@ __device__ __forceinline__ IdType CsdSampleResidualTokenAndMaxLogit(
     DType coin,
     bool load_draft_probs,
     SamplingTempStorage<BLOCK_THREADS, SCAN_ALGORITHM, REDUCE_ALGORITHM>& temp_storage,
-    DType* max_target_logit) {
+    DType* max_target_logit,
+    DType* max_target_prob,
+    DType* target_entropy) {
   const uint32_t tx = threadIdx.x;
   DType sum_relu_q_minus_p(0);
   DType thread_max_target_logit = -FLT_MAX;
+  DType thread_max_target_prob = 0;
+  DType thread_entropy(0);
+  bool compute_extra_stats = max_target_prob != nullptr && target_entropy != nullptr;
   vec_t<DType, VEC_SIZE> q_vec, p_vec;
   DType relu_q_minus_p[VEC_SIZE];
 
@@ -136,6 +176,17 @@ __device__ __forceinline__ IdType CsdSampleResidualTokenAndMaxLogit(
         thread_max_target_logit = max(thread_max_target_logit, logits_vec[j]);
       }
     }
+    if (compute_extra_stats) {
+      DType entropy_vec[VEC_SIZE];
+#pragma unroll
+      for (uint32_t j = 0; j < VEC_SIZE; ++j) {
+        thread_max_target_prob = max(thread_max_target_prob, q_vec[j]);
+        entropy_vec[j] = q_vec[j] > DType(0) ? -q_vec[j] * logf(q_vec[j]) : DType(0);
+      }
+      thread_entropy += BlockReduce<DType, BLOCK_THREADS, REDUCE_ALGORITHM>(temp_storage.block_prim.reduce)
+                            .Sum<VEC_SIZE>(entropy_vec);
+      __syncthreads();
+    }
 #pragma unroll
     for (uint32_t j = 0; j < VEC_SIZE; ++j) {
       relu_q_minus_p[j] = max(q_vec[j] - p_vec[j], DType(0));
@@ -151,10 +202,20 @@ __device__ __forceinline__ IdType CsdSampleResidualTokenAndMaxLogit(
                                  .Reduce(thread_max_target_logit, CsdMaxOp<DType>());
     __syncthreads();
   }
+  DType block_max_target_prob = 0;
+  if (compute_extra_stats) {
+    block_max_target_prob = BlockReduce<DType, BLOCK_THREADS, REDUCE_ALGORITHM>(temp_storage.block_prim.reduce)
+                                .Reduce(thread_max_target_prob, CsdMaxOp<DType>());
+    __syncthreads();
+  }
   if (tx == 0) {
     temp_storage.block_aggregate.value = sum_relu_q_minus_p;
     if constexpr (COMPUTE_MAX_LOGIT) {
       *max_target_logit = block_max_target_logit;
+    }
+    if (compute_extra_stats) {
+      *max_target_prob = block_max_target_prob;
+      *target_entropy = thread_entropy;
     }
   }
   temp_storage.sampled_id = d - 1;
@@ -225,6 +286,15 @@ __global__ void TreeSpeculativeSamplingTargetOnly(
     int64_t* csd_lookup_hit_ct,
     int64_t* csd_forced_accept_ct,
     int64_t* csd_delta_pair_ct,
+    float* csd_delta_float_stats,
+    int32_t* csd_delta_int_stats,
+    int64_t* csd_debug_event_pairs,
+    float* csd_debug_event_float_stats,
+    int32_t* csd_debug_event_int_stats,
+    int32_t* csd_debug_event_counter,
+    uint32_t csd_debug_event_capacity,
+    uint32_t csd_debug_sample_rate,
+    bool csd_debug_stats_enabled,
     uint32_t csd_table_capacity,
     uint32_t csd_table_max_probe,
     uint32_t csd_delta_capacity,
@@ -266,63 +336,90 @@ __global__ void TreeSpeculativeSamplingTargetOnly(
 
         if constexpr (CSD_ENABLED || CSD_DYNAMIC_UPDATE) {
           DType max_target_logit = 0;
-          DType target_logit_single = 0;
-          if constexpr (CSD_ENABLED) {
-            target_logit_single = target_logits[cur_prob_offset + draft_token_id];
-            resampled_token_id = CsdSampleResidualTokenAndMaxLogit<
-                BLOCK_THREADS,
-                SCAN_ALGORITHM,
-                REDUCE_ALGORITHM,
-                VEC_SIZE,
-                DETERMINISTIC,
-                true,
-                DType,
-                IdType2>(
-                target_probs,
-                draft_probs,
-                target_logits,
-                cur_prob_offset,
-                d,
-                uniform_samples_for_final_sampling[bx],
-                true,
-                temp_storage,
-                &max_target_logit);
-          } else {
-            resampled_token_id = CsdSampleResidualTokenAndMaxLogit<
-                BLOCK_THREADS,
-                SCAN_ALGORITHM,
-                REDUCE_ALGORITHM,
-                VEC_SIZE,
-                DETERMINISTIC,
-                false,
-                DType,
-                IdType2>(
-                target_probs,
-                draft_probs,
-                target_logits,
-                cur_prob_offset,
-                d,
-                uniform_samples_for_final_sampling[bx],
-                true,
-                temp_storage,
-                &max_target_logit);
-          }
+          DType max_target_prob = 0;
+          DType target_entropy = 0;
+          DType target_logit_single = target_logits[cur_prob_offset + draft_token_id];
+          resampled_token_id = CsdSampleResidualTokenAndMaxLogit<
+              BLOCK_THREADS,
+              SCAN_ALGORITHM,
+              REDUCE_ALGORITHM,
+              VEC_SIZE,
+              DETERMINISTIC,
+              true,
+              DType,
+              IdType2>(
+              target_probs,
+              draft_probs,
+              target_logits,
+              cur_prob_offset,
+              d,
+              uniform_samples_for_final_sampling[bx],
+              true,
+              temp_storage,
+              &max_target_logit,
+              csd_debug_stats_enabled ? &max_target_prob : nullptr,
+              csd_debug_stats_enabled ? &target_entropy : nullptr);
           has_resampled_token = true;
 
           if (tx == 0) {
             int64_t csd_pair_key = CsdPackPair(draft_token_id, resampled_token_id);
+            DType resampled_prob = target_probs[cur_prob_offset + resampled_token_id];
+            DType resampled_logit = target_logits[cur_prob_offset + resampled_token_id];
+            bool csd_logit_pass = target_logit_single >= max_target_logit + csd_logit_margin;
             bool table_hit = CSD_ENABLED &&
                              CsdHashContains(csd_table_keys, csd_table_capacity, csd_table_max_probe, csd_pair_key);
+            float normalized_entropy = d > 1 ? static_cast<float>(target_entropy / logf(static_cast<float>(d))) : 0.0f;
+            float logit_margin_to_max = static_cast<float>(target_logit_single - max_target_logit);
+            float pair_logit_margin = static_cast<float>(target_logit_single - resampled_logit);
             if constexpr (CSD_DYNAMIC_UPDATE) {
-              CsdAppendDelta(csd_delta_pairs, csd_delta_counter, csd_delta_pair_ct, csd_delta_capacity, csd_pair_key);
+              if (csd_logit_pass) {
+                int32_t delta_pos = CsdAppendDelta(
+                    csd_delta_pairs, csd_delta_counter, csd_delta_pair_ct, csd_delta_capacity, csd_pair_key);
+                if (csd_debug_stats_enabled) {
+                  CsdWriteDebugStats(
+                      csd_delta_float_stats,
+                      csd_delta_int_stats,
+                      delta_pos,
+                      csd_delta_capacity,
+                      CSD_DEBUG_EVENT_DELTA,
+                      j,
+                      static_cast<float>(target_prob_single),
+                      static_cast<float>(resampled_prob),
+                      static_cast<float>(max_target_prob),
+                      static_cast<float>(target_entropy),
+                      normalized_entropy,
+                      logit_margin_to_max,
+                      pair_logit_margin);
+                }
+              }
             }
             if (table_hit) {
               CsdAtomicAddI64(csd_lookup_hit_ct, 1ULL);
             }
-            csd_force_accept = table_hit && target_logit_single >= max_target_logit + csd_logit_margin &&
-                               !csd_force_accept_disabled;
+            csd_force_accept = table_hit && csd_logit_pass && !csd_force_accept_disabled;
             if (csd_force_accept) {
-              CsdAtomicAddI64(csd_forced_accept_ct, 1ULL);
+              unsigned long long event_idx = atomicAdd(reinterpret_cast<unsigned long long*>(csd_forced_accept_ct), 1ULL);
+              uint32_t sample_rate = csd_debug_sample_rate == 0 ? 1 : csd_debug_sample_rate;
+              if (csd_debug_stats_enabled && csd_debug_event_capacity > 0 && event_idx % sample_rate == 0) {
+                int32_t event_pos = atomicAdd(csd_debug_event_counter, 1);
+                if (event_pos >= 0 && static_cast<uint32_t>(event_pos) < csd_debug_event_capacity) {
+                  csd_debug_event_pairs[event_pos] = csd_pair_key;
+                }
+                CsdWriteDebugStats(
+                    csd_debug_event_float_stats,
+                    csd_debug_event_int_stats,
+                    event_pos,
+                    csd_debug_event_capacity,
+                    CSD_DEBUG_EVENT_FORCE_ACCEPT,
+                    j,
+                    static_cast<float>(target_prob_single),
+                    static_cast<float>(resampled_prob),
+                    static_cast<float>(max_target_prob),
+                    static_cast<float>(target_entropy),
+                    normalized_entropy,
+                    logit_margin_to_max,
+                    pair_logit_margin);
+              }
             }
             temp_storage.block_aggregate.value = csd_force_accept ? DType(1) : DType(0);
           }
@@ -353,6 +450,8 @@ __global__ void TreeSpeculativeSamplingTargetOnly(
 
   if (!has_resampled_token) {
     DType max_target_logit = 0;
+    DType max_target_prob = 0;
+    DType target_entropy = 0;
     resampled_token_id = CsdSampleResidualTokenAndMaxLogit<
         BLOCK_THREADS,
         SCAN_ALGORITHM,
@@ -370,7 +469,9 @@ __global__ void TreeSpeculativeSamplingTargetOnly(
         uniform_samples_for_final_sampling[bx],
         num_accepted_tokens != num_speculative_tokens - 1,
         temp_storage,
-        &max_target_logit);
+        &max_target_logit,
+        nullptr,
+        nullptr);
   }
   predicts[last_accepted_retrive_idx] = resampled_token_id;
   // value at not used indices are undefined
@@ -409,6 +510,15 @@ cudaError_t LaunchTreeSpeculativeSamplingTargetOnly(
     int64_t* csd_lookup_hit_ct,
     int64_t* csd_forced_accept_ct,
     int64_t* csd_delta_pair_ct,
+    float* csd_delta_float_stats,
+    int32_t* csd_delta_int_stats,
+    int64_t* csd_debug_event_pairs,
+    float* csd_debug_event_float_stats,
+    int32_t* csd_debug_event_int_stats,
+    int32_t* csd_debug_event_counter,
+    uint32_t csd_debug_event_capacity,
+    uint32_t csd_debug_sample_rate,
+    bool csd_debug_stats_enabled,
     uint32_t csd_table_capacity,
     uint32_t csd_table_max_probe,
     uint32_t csd_delta_capacity,
@@ -447,6 +557,15 @@ cudaError_t LaunchTreeSpeculativeSamplingTargetOnly(
       &csd_lookup_hit_ct,
       &csd_forced_accept_ct,
       &csd_delta_pair_ct,
+      &csd_delta_float_stats,
+      &csd_delta_int_stats,
+      &csd_debug_event_pairs,
+      &csd_debug_event_float_stats,
+      &csd_debug_event_int_stats,
+      &csd_debug_event_counter,
+      &csd_debug_event_capacity,
+      &csd_debug_sample_rate,
+      &csd_debug_stats_enabled,
       &csd_table_capacity,
       &csd_table_max_probe,
       &csd_delta_capacity,
@@ -500,6 +619,15 @@ cudaError_t TreeSpeculativeSamplingTargetOnly(
     int64_t* csd_lookup_hit_ct = nullptr,
     int64_t* csd_forced_accept_ct = nullptr,
     int64_t* csd_delta_pair_ct = nullptr,
+    float* csd_delta_float_stats = nullptr,
+    int32_t* csd_delta_int_stats = nullptr,
+    int64_t* csd_debug_event_pairs = nullptr,
+    float* csd_debug_event_float_stats = nullptr,
+    int32_t* csd_debug_event_int_stats = nullptr,
+    int32_t* csd_debug_event_counter = nullptr,
+    uint32_t csd_debug_event_capacity = 0,
+    uint32_t csd_debug_sample_rate = 1,
+    bool csd_debug_stats_enabled = false,
     uint32_t csd_table_capacity = 0,
     uint32_t csd_table_max_probe = 0,
     uint32_t csd_delta_capacity = 0,
@@ -535,6 +663,15 @@ cudaError_t TreeSpeculativeSamplingTargetOnly(
         csd_lookup_hit_ct,
         csd_forced_accept_ct,
         csd_delta_pair_ct,
+        csd_delta_float_stats,
+        csd_delta_int_stats,
+        csd_debug_event_pairs,
+        csd_debug_event_float_stats,
+        csd_debug_event_int_stats,
+        csd_debug_event_counter,
+        csd_debug_event_capacity,
+        csd_debug_sample_rate,
+        csd_debug_stats_enabled,
         csd_table_capacity,
         csd_table_max_probe,
         csd_delta_capacity,
@@ -571,6 +708,15 @@ cudaError_t TreeSpeculativeSamplingTargetOnly(
         csd_lookup_hit_ct,
         csd_forced_accept_ct,
         csd_delta_pair_ct,
+        csd_delta_float_stats,
+        csd_delta_int_stats,
+        csd_debug_event_pairs,
+        csd_debug_event_float_stats,
+        csd_debug_event_int_stats,
+        csd_debug_event_counter,
+        csd_debug_event_capacity,
+        csd_debug_sample_rate,
+        csd_debug_stats_enabled,
         csd_table_capacity,
         csd_table_max_probe,
         csd_delta_capacity,
@@ -607,6 +753,15 @@ cudaError_t TreeSpeculativeSamplingTargetOnly(
         csd_lookup_hit_ct,
         csd_forced_accept_ct,
         csd_delta_pair_ct,
+        csd_delta_float_stats,
+        csd_delta_int_stats,
+        csd_debug_event_pairs,
+        csd_debug_event_float_stats,
+        csd_debug_event_int_stats,
+        csd_debug_event_counter,
+        csd_debug_event_capacity,
+        csd_debug_sample_rate,
+        csd_debug_stats_enabled,
         csd_table_capacity,
         csd_table_max_probe,
         csd_delta_capacity,
@@ -642,6 +797,15 @@ cudaError_t TreeSpeculativeSamplingTargetOnly(
       csd_lookup_hit_ct,
       csd_forced_accept_ct,
       csd_delta_pair_ct,
+      csd_delta_float_stats,
+      csd_delta_int_stats,
+      csd_debug_event_pairs,
+      csd_debug_event_float_stats,
+      csd_debug_event_int_stats,
+      csd_debug_event_counter,
+      csd_debug_event_capacity,
+      csd_debug_sample_rate,
+      csd_debug_stats_enabled,
       csd_table_capacity,
       csd_table_max_probe,
       csd_delta_capacity,

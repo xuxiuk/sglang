@@ -703,6 +703,12 @@ class EAGLEWorkerV2(BaseSpecWorker):
         self.csd_runtime.save_table(path)
         return True
 
+    def save_csd_debug_events(self, path: Optional[str] = None) -> bool:
+        if not self.csd_runtime.enabled:
+            return False
+        self.csd_runtime.save_debug_events(path)
+        return True
+
     def forward_batch_generation(self, model_worker_batch: ModelWorkerBatch):
         if (
             model_worker_batch.forward_mode.is_extend()

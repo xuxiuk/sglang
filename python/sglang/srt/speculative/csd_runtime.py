@@ -18,6 +18,17 @@ CSD_MAX_TOKEN_ID = (1 << 31) - 1
 CSD_DEFAULT_LOAD_FACTOR = 0.5
 CSD_DEFAULT_MAX_PROBE = 16
 CSD_DEFAULT_DELTA_CAPACITY = 1 << 20
+CSD_DEBUG_NUM_FLOAT_STATS = 7
+CSD_DEBUG_NUM_INT_STATS = 2
+CSD_DEBUG_FLOAT_FIELDS = (
+    "draft_prob",
+    "resampled_prob",
+    "max_prob",
+    "target_entropy",
+    "normalized_entropy",
+    "logit_margin_to_max",
+    "pair_logit_margin",
+)
 _UINT64_MASK = (1 << 64) - 1
 _CSD_REBUILD_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="csd-rebuild")
 
@@ -53,19 +64,48 @@ def _next_power_of_two(value: int) -> int:
 class CSDEntry:
     freq: int = 1
     allow: bool = True
+    stats_sum: List[float] = field(
+        default_factory=lambda: [0.0] * CSD_DEBUG_NUM_FLOAT_STATS
+    )
+    step_hist: Counter[int] = field(default_factory=Counter)
 
     @classmethod
     def from_record(cls, record: Dict[str, Any]) -> "CSDEntry":
-        return cls(
+        entry = cls(
             freq=int(record.get("freq", 1)),
             allow=bool(record.get("allow", True)),
         )
+        if "stats_sum" in record:
+            stats_sum = list(record["stats_sum"])
+            entry.stats_sum = [float(x) for x in stats_sum[:CSD_DEBUG_NUM_FLOAT_STATS]]
+            entry.stats_sum.extend([0.0] * (CSD_DEBUG_NUM_FLOAT_STATS - len(entry.stats_sum)))
+        else:
+            for idx, field_name in enumerate(CSD_DEBUG_FLOAT_FIELDS):
+                avg_key = f"avg_{field_name}"
+                if avg_key in record:
+                    entry.stats_sum[idx] = float(record[avg_key]) * entry.freq
+        if "step_hist" in record:
+            entry.step_hist = Counter(
+                {int(k): int(v) for k, v in record["step_hist"].items()}
+            )
+        return entry
 
     def to_record(self) -> Dict[str, Any]:
-        return {
+        record = {
             "freq": int(self.freq),
             "allow": bool(self.allow),
         }
+        if any(value != 0.0 for value in self.stats_sum):
+            record["stats_sum"] = [float(value) for value in self.stats_sum]
+            for idx, field_name in enumerate(CSD_DEBUG_FLOAT_FIELDS):
+                record[f"avg_{field_name}"] = float(self.stats_sum[idx]) / max(
+                    int(self.freq), 1
+                )
+        if self.step_hist:
+            record["step_hist"] = {
+                str(step): int(count) for step, count in sorted(self.step_hist.items())
+            }
+        return record
 
 
 @dataclass
@@ -155,6 +195,21 @@ class CSDTableStore:
                 self.entries[key] = CSDEntry(freq=int(count), allow=True)
             else:
                 entry.freq += int(count)
+
+    def merge_records(
+        self,
+        records: Iterable[Tuple[int, List[float], int]],
+    ) -> None:
+        for key, float_stats, spec_step in records:
+            entry = self.entries.get(key)
+            if entry is None:
+                entry = CSDEntry(freq=0, allow=True)
+                self.entries[key] = entry
+            entry.freq += 1
+            for idx, value in enumerate(float_stats[:CSD_DEBUG_NUM_FLOAT_STATS]):
+                entry.stats_sum[idx] += float(value)
+            if int(spec_step) >= 0:
+                entry.step_hist[int(spec_step)] += 1
 
     def filtered_keys(self, freq_threshold: int) -> List[int]:
         return [
@@ -367,16 +422,27 @@ class CSDMetrics:
 class CSDDeltaBuffer:
     pairs: torch.Tensor
     counter: torch.Tensor
+    float_stats: torch.Tensor
+    int_stats: torch.Tensor
+    stats_enabled: bool
 
     @classmethod
     def allocate(
         cls,
         device: torch.device | str,
         capacity: int = CSD_DEFAULT_DELTA_CAPACITY,
+        stats_enabled: bool = False,
     ) -> "CSDDeltaBuffer":
         return cls(
             pairs=torch.empty((capacity,), dtype=torch.int64, device=device),
             counter=torch.zeros((1,), dtype=torch.int32, device=device),
+            float_stats=torch.empty(
+                (capacity, CSD_DEBUG_NUM_FLOAT_STATS), dtype=torch.float32, device=device
+            ),
+            int_stats=torch.empty(
+                (capacity, CSD_DEBUG_NUM_INT_STATS), dtype=torch.int32, device=device
+            ),
+            stats_enabled=stats_enabled,
         )
 
     @property
@@ -394,6 +460,93 @@ class CSDDeltaBuffer:
         self.reset()
         return Counter(int(pair) for pair in pairs if int(pair) >= 0)
 
+    def drain_records(self) -> List[Tuple[int, List[float], int]]:
+        if not self.stats_enabled:
+            count = min(int(self.counter.item()), self.capacity)
+            if count == 0:
+                return []
+            pairs = self.pairs[:count].detach().cpu().tolist()
+            self.reset()
+            return [
+                (int(pair), [0.0] * CSD_DEBUG_NUM_FLOAT_STATS, -1)
+                for pair in pairs
+                if int(pair) >= 0
+            ]
+        count = min(int(self.counter.item()), self.capacity)
+        if count == 0:
+            return []
+        pairs = self.pairs[:count].detach().cpu().tolist()
+        float_stats = self.float_stats[:count].detach().cpu().tolist()
+        int_stats = self.int_stats[:count].detach().cpu().tolist()
+        self.reset()
+        records = []
+        for pair, stats, ints in zip(pairs, float_stats, int_stats):
+            key = int(pair)
+            if key >= 0:
+                records.append((key, [float(value) for value in stats], int(ints[1])))
+        return records
+
+
+@dataclass
+class CSDDebugEventBuffer:
+    pairs: torch.Tensor
+    float_stats: torch.Tensor
+    int_stats: torch.Tensor
+    counter: torch.Tensor
+    sample_rate: int
+
+    @classmethod
+    def allocate(
+        cls,
+        device: torch.device | str,
+        capacity: int,
+        sample_rate: int,
+    ) -> "CSDDebugEventBuffer":
+        return cls(
+            pairs=torch.empty((capacity,), dtype=torch.int64, device=device),
+            float_stats=torch.empty(
+                (capacity, CSD_DEBUG_NUM_FLOAT_STATS), dtype=torch.float32, device=device
+            ),
+            int_stats=torch.empty(
+                (capacity, CSD_DEBUG_NUM_INT_STATS), dtype=torch.int32, device=device
+            ),
+            counter=torch.zeros((1,), dtype=torch.int32, device=device),
+            sample_rate=max(int(sample_rate), 1),
+        )
+
+    @property
+    def capacity(self) -> int:
+        return self.pairs.shape[0]
+
+    def reset(self) -> None:
+        self.counter.zero_()
+
+    def drain_records(self) -> List[Dict[str, Any]]:
+        count = min(int(self.counter.item()), self.capacity)
+        if count == 0:
+            return []
+        pairs = self.pairs[:count].detach().cpu().tolist()
+        float_stats = self.float_stats[:count].detach().cpu().tolist()
+        int_stats = self.int_stats[:count].detach().cpu().tolist()
+        self.reset()
+        records = []
+        for pair, stats, ints in zip(pairs, float_stats, int_stats):
+            key = int(pair)
+            if key < 0:
+                continue
+            lhs_token, rhs_token = unpack_csd_pair(key)
+            record = {
+                "key": key,
+                "lhs_token": int(lhs_token),
+                "rhs_token": int(rhs_token),
+                "event_flag": int(ints[0]),
+                "spec_step": int(ints[1]),
+            }
+            for field_name, value in zip(CSD_DEBUG_FLOAT_FIELDS, stats):
+                record[field_name] = float(value)
+            records.append(record)
+        return records
+
 
 @dataclass
 class CSDRuntime:
@@ -403,9 +556,11 @@ class CSDRuntime:
     table: CSDHashTable
     metrics: CSDMetrics
     delta_buffer: Optional[CSDDeltaBuffer] = None
+    debug_event_buffer: Optional[CSDDebugEventBuffer] = None
     table_store: CSDTableStore = field(default_factory=CSDTableStore)
     delta_counts: Counter[int] = field(default_factory=Counter)
     delta_save_path: Optional[str] = None
+    debug_save_path: Optional[str] = None
     online_rebuild_enabled: bool = False
     rebuild_future: Optional[Future] = None
 
@@ -443,6 +598,14 @@ class CSDRuntime:
             delta_buffer = CSDDeltaBuffer.allocate(
                 device=device,
                 capacity=server_args.speculative_csd_delta_capacity,
+                stats_enabled=server_args.speculative_csd_debug_stats,
+            )
+        debug_event_buffer = None
+        if server_args.speculative_csd_debug_stats:
+            debug_event_buffer = CSDDebugEventBuffer.allocate(
+                device=device,
+                capacity=server_args.speculative_csd_debug_event_capacity,
+                sample_rate=server_args.speculative_csd_debug_sample_rate,
             )
 
         return cls(
@@ -452,8 +615,10 @@ class CSDRuntime:
             table=table,
             metrics=metrics,
             delta_buffer=delta_buffer,
+            debug_event_buffer=debug_event_buffer,
             table_store=table_store,
             delta_save_path=server_args.speculative_csd_delta_save_path,
+            debug_save_path=server_args.speculative_csd_debug_save_path,
             online_rebuild_enabled=bool(
                 server_args.speculative_csd_dynamic_update
                 and server_args.speculative_csd_table_path is not None
@@ -467,7 +632,9 @@ class CSDRuntime:
     def flush_delta(self) -> Counter[int]:
         if self.delta_buffer is None:
             return Counter()
-        counts = self.delta_buffer.drain_to_counter()
+        records = self.delta_buffer.drain_records()
+        self.table_store.merge_records(records)
+        counts = Counter(key for key, _, _ in records)
         self.delta_counts.update(counts)
         return counts
 
@@ -483,9 +650,23 @@ class CSDRuntime:
 
     def save_table(self, path: str) -> None:
         self.flush_delta()
-        self.table_store.merge_counts(self.delta_counts)
         self.delta_counts.clear()
         self.table_store.save(path)
+        if self.debug_save_path is not None:
+            self.save_debug_events(self.debug_save_path)
+
+    def save_debug_events(self, path: Optional[str] = None) -> None:
+        save_path = path or self.debug_save_path
+        if save_path is None:
+            raise ValueError("CSD debug save path is not configured")
+        records = []
+        if self.debug_event_buffer is not None:
+            records = self.debug_event_buffer.drain_records()
+        table_path = Path(save_path)
+        table_path.parent.mkdir(parents=True, exist_ok=True)
+        with table_path.open("a", encoding="utf-8") as f:
+            for record in records:
+                f.write(json.dumps(record) + "\n")
 
     def maybe_apply_async_rebuild(
         self,
@@ -519,7 +700,6 @@ class CSDRuntime:
         counts = self.flush_delta()
         if not counts:
             return False
-        self.table_store.merge_counts(counts)
         self.delta_counts.clear()
         keys = self.table_store.filtered_keys(freq_threshold)
         self.rebuild_future = _CSD_REBUILD_EXECUTOR.submit(
@@ -538,7 +718,6 @@ class CSDRuntime:
         load_factor: float = CSD_DEFAULT_LOAD_FACTOR,
     ) -> None:
         self.flush_delta()
-        self.table_store.merge_counts(self.delta_counts)
         self.delta_counts.clear()
         # TODO: Move rebuild off the hot path and swap in a freshly built table at an idle-safe boundary.
         self.table = self.table_store.build_allow_hash_table(

@@ -20,7 +20,7 @@ WATCHDOG_TIMEOUT=${WATCHDOG_TIMEOUT:-3000}
 SGLANG_TORCH_PROFILER_DIR=${SGLANG_TORCH_PROFILER_DIR:-/home/zhouxuwen/sglang/benchmark/csd/runs/profiles}
 
 THINK_TASKS=${THINK_TASKS:-"aime25"}
-# NO_THINK_TASKS=${NO_THINK_TASKS:-"gsm8k humaneval minerva_math500"}
+CODING_TASKS=${CODING_TASKS:-"humaneval"}
 NO_THINK_TASKS=${NO_THINK_TASKS:-"gsm8k"}
 TASKS=${TASKS:-"${NO_THINK_TASKS} ${THINK_TASKS}"}
 NUM_FEWSHOT=${NUM_FEWSHOT:-}
@@ -31,7 +31,7 @@ PARALLEL_VALUES=${PARALLEL_VALUES:-"1 8 16 32 64 128 256 2048"}
 REPEAT_RUNS=${REPEAT_RUNS:-5}
 ENABLE_PARALLEL_SWEEP=${ENABLE_PARALLEL_SWEEP:-1}
 TIMEOUT=${TIMEOUT:-1800}
-MAX_GEN_TOKS=${MAX_GEN_TOKS:-49152}
+MAX_GEN_TOKS=${MAX_GEN_TOKS:-81920}
 MAX_LENGTH=${MAX_LENGTH:-96000}
 APPLY_CHAT_TEMPLATE=${APPLY_CHAT_TEMPLATE:-}
 FEWSHOT_AS_MULTITURN=${FEWSHOT_AS_MULTITURN:-}
@@ -41,7 +41,8 @@ NO_THINK_APPLY_CHAT_TEMPLATE=${NO_THINK_APPLY_CHAT_TEMPLATE:-0}
 THINK_FEWSHOT_AS_MULTITURN=${THINK_FEWSHOT_AS_MULTITURN:-auto}
 NO_THINK_FEWSHOT_AS_MULTITURN=${NO_THINK_FEWSHOT_AS_MULTITURN:-auto}
 THINK_GEN_KWARGS=${THINK_GEN_KWARGS:-temperature=1.0,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=1.5,repetition_penalty=1.0}
-NO_THINK_GEN_KWARGS=${NO_THINK_GEN_KWARGS:-temperature=0.0}
+CODING_GEN_KWARGS=${CODING_GEN_KWARGS:-temperature=0.6,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=0.0,repetition_penalty=1.0}
+NO_THINK_GEN_KWARGS=${NO_THINK_GEN_KWARGS:-temperature=1.0,top_p=1.0,top_k=40,min_p=0.0,presence_penalty=2.0,repetition_penalty=1.0}
 CONFIRM_RUN_UNSAFE_CODE=${CONFIRM_RUN_UNSAFE_CODE:-1}
 HF_ALLOW_CODE_EVAL=${HF_ALLOW_CODE_EVAL:-1}
 SAMPLE_LOG=${SAMPLE_LOG:-1}
@@ -210,6 +211,7 @@ keys = [
     "SGLANG_TORCH_PROFILER_DIR",
     "TASKS",
     "THINK_TASKS",
+    "CODING_TASKS",
     "NO_THINK_TASKS",
     "NUM_FEWSHOT",
     "LIMIT",
@@ -227,6 +229,9 @@ keys = [
     "APPLY_CHAT_TEMPLATE",
     "FEWSHOT_AS_MULTITURN",
     "GEN_KWARGS",
+    "THINK_GEN_KWARGS",
+    "CODING_GEN_KWARGS",
+    "NO_THINK_GEN_KWARGS",
     "CONFIRM_RUN_UNSAFE_CODE",
     "HF_ALLOW_CODE_EVAL",
     "SAMPLE_LOG",
@@ -296,6 +301,17 @@ task_uses_thinking() {
   return 1
 }
 
+task_uses_coding() {
+  local task="$1"
+  local item
+  for item in ${CODING_TASKS}; do
+    if [[ "${item}" == "${task}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 run_lm_eval_task() {
   local mode="$1"
   local task="$2"
@@ -313,7 +329,11 @@ run_lm_eval_task() {
   local apply_chat_template
   local fewshot_as_multiturn
   local gen_kwargs
-  if task_uses_thinking "${task}"; then
+  if task_uses_coding "${task}"; then
+    apply_chat_template="${THINK_APPLY_CHAT_TEMPLATE}"
+    fewshot_as_multiturn="${THINK_FEWSHOT_AS_MULTITURN}"
+    gen_kwargs="${CODING_GEN_KWARGS}"
+  elif task_uses_thinking "${task}"; then
     apply_chat_template="${THINK_APPLY_CHAT_TEMPLATE}"
     fewshot_as_multiturn="${THINK_FEWSHOT_AS_MULTITURN}"
     gen_kwargs="${THINK_GEN_KWARGS}"

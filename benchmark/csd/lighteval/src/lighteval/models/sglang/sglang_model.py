@@ -25,7 +25,7 @@ import logging
 from typing import Any, Optional
 
 import torch
-from pydantic import PositiveFloat, PositiveInt
+from pydantic import NonNegativeFloat, PositiveFloat, PositiveInt
 from tqdm import tqdm
 
 from lighteval.data import GenerativeTaskDataset, LoglikelihoodDataset
@@ -156,11 +156,15 @@ class SGLangModelConfig(ModelConfig):
     speculative_csd_enabled: bool = False
     speculative_csd_table_path: str | None = None
     speculative_csd_freq_threshold: PositiveInt | None = None
-    speculative_csd_prob_ratio: PositiveFloat | None = None
+    speculative_csd_prob_ratio: NonNegativeFloat | None = None
     speculative_csd_dynamic_update: bool = False
     speculative_csd_force_accept_disabled: bool = False
     speculative_csd_save_table_path: str | None = None
     speculative_csd_save_table_metadata: dict[str, Any] | None = None
+    speculative_csd_debug_stats: bool = False
+    speculative_csd_debug_event_capacity: PositiveInt | None = None
+    speculative_csd_debug_sample_rate: PositiveInt | None = None
+    speculative_csd_debug_save_path: str | None = None
 
 
 class SGLangModel(LightevalModel):
@@ -207,6 +211,8 @@ class SGLangModel(LightevalModel):
                         self.config.speculative_csd_save_table_path,
                         self.config.speculative_csd_save_table_metadata,
                     )
+                else:
+                    self.flush_csd_debug_events()
             finally:
                 self.model.shutdown()
 
@@ -251,6 +257,9 @@ class SGLangModel(LightevalModel):
             "speculative_csd_table_path": config.speculative_csd_table_path,
             "speculative_csd_freq_threshold": config.speculative_csd_freq_threshold,
             "speculative_csd_prob_ratio": config.speculative_csd_prob_ratio,
+            "speculative_csd_debug_event_capacity": config.speculative_csd_debug_event_capacity,
+            "speculative_csd_debug_sample_rate": config.speculative_csd_debug_sample_rate,
+            "speculative_csd_debug_save_path": config.speculative_csd_debug_save_path,
             "watchdog_timeout": config.watchdog_timeout,
             "mamba_scheduler_strategy": config.mamba_scheduler_strategy,
             "log_level": config.log_level,
@@ -262,6 +271,8 @@ class SGLangModel(LightevalModel):
             self.model_args["speculative_csd_dynamic_update"] = True
         if config.speculative_csd_force_accept_disabled:
             self.model_args["speculative_csd_force_accept_disabled"] = True
+        if config.speculative_csd_debug_stats:
+            self.model_args["speculative_csd_debug_stats"] = True
         model = Engine(**self.model_args)
 
         if self._max_length is None:
@@ -381,6 +392,10 @@ class SGLangModel(LightevalModel):
 
     def save_csd_table(self, path: str, metadata: dict[str, Any] | None = None):
         self.model.save_csd_table(path=path, metadata=metadata)
+
+    def flush_csd_debug_events(self):
+        if self.config.speculative_csd_debug_save_path and self.model is not None:
+            self.model.save_csd_debug_events(path=self.config.speculative_csd_debug_save_path)
 
     @requires("sglang")
     def _generate(

@@ -125,6 +125,8 @@ from sglang.srt.managers.io_struct import (
     ResumeMemoryOccupationReqInput,
     RpcReqInput,
     RpcReqOutput,
+    SaveCSDDebugReqInput,
+    SaveCSDDebugReqOutput,
     SaveCSDTableReqInput,
     SaveCSDTableReqOutput,
     SendWeightsToRemoteInstanceReqInput,
@@ -714,6 +716,17 @@ class Scheduler(
         if not save_csd_table(path, metadata):
             raise ValueError("CSD is not enabled, so no CSD table was saved.")
 
+    def save_csd_debug_events(self, path: Optional[str] = None) -> None:
+        if self.tp_rank != 0 or self.dp_rank not in (None, 0):
+            return
+        if self.spec_algorithm.is_none():
+            raise ValueError("CSD debug export requires speculative decoding.")
+        save_csd_debug_events = getattr(self.draft_worker, "save_csd_debug_events", None)
+        if save_csd_debug_events is None:
+            raise ValueError("The current speculative worker does not support CSD debug export.")
+        if not save_csd_debug_events(path):
+            raise ValueError("CSD is not enabled, so no CSD debug records were saved.")
+
     def init_cache_with_memory_pool(self):
         server_args = self.server_args
         uses_transformers_backend = (
@@ -1255,6 +1268,7 @@ class Scheduler(
                 (GetInternalStateReq, self.get_internal_state),
                 (SetInternalStateReq, self.set_internal_state),
                 (SaveCSDTableReqInput, self.handle_save_csd_table),
+                (SaveCSDDebugReqInput, self.handle_save_csd_debug_events),
                 (RpcReqInput, self.handle_rpc_request),
                 (ExpertDistributionReq, self.expert_distribution_handle),
                 (LoadLoRAAdapterReqInput, self.load_lora_adapter),
@@ -3152,6 +3166,14 @@ class Scheduler(
         except Exception as e:
             logger.error(f"Failed to save CSD table: {str(e)}")
             return SaveCSDTableReqOutput(success=False, message=str(e))
+
+    def handle_save_csd_debug_events(self, recv_req: SaveCSDDebugReqInput):
+        try:
+            self.save_csd_debug_events(recv_req.path)
+            return SaveCSDDebugReqOutput(success=True, message="")
+        except Exception as e:
+            logger.error(f"Failed to save CSD debug events: {str(e)}")
+            return SaveCSDDebugReqOutput(success=False, message=str(e))
 
     def handle_rpc_request(self, recv_req: RpcReqInput):
         # Handle RPC requests

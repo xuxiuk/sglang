@@ -1,4 +1,5 @@
 import argparse
+import fcntl
 import gzip
 import io
 import json
@@ -93,6 +94,23 @@ def _default_csd_table_path(args):
     return str(Path(args.csd_save_dir) / ("_".join(_safe_filename_part(part) for part in parts) + ".json"))
 
 
+def _redpajama_cache_dir():
+    return Path(os.environ.get("REDPAJAMA_URL_CACHE_DIR", "/home/zhouxuwen/sglang-debug/benchmark/csd/runs/redpajama_url_cache"))
+
+
+def _read_cached_url_list(path):
+    cache_path = _redpajama_cache_dir() / path
+    if cache_path.exists():
+        return [line.strip() for line in cache_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return None
+
+
+def _write_cached_url_list(path, urls):
+    cache_path = _redpajama_cache_dir() / path
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text("\n".join(urls) + "\n", encoding="utf-8")
+
+
 def _open_url_text(url):
     response = urlopen(Request(url, headers=URL_HEADERS), timeout=60)
     if url.endswith(".zst"):
@@ -108,7 +126,7 @@ def _open_url_text(url):
     return io.TextIOWrapper(response, encoding="utf-8")
 
 
-def _read_url_list(path):
+def _download_url_list(path):
     bases = []
     endpoint = os.environ.get("HF_ENDPOINT")
     if endpoint and "hf-mirror.com" in endpoint:
@@ -118,17 +136,36 @@ def _read_url_list(path):
         bases.append(REDPAJAMA_MIRROR_RAW_BASE)
 
     last_error = None
-    for base in bases:
-        try:
-            with urlopen(Request(f"{base}/{path}", headers=URL_HEADERS), timeout=30) as response:
-                return [
-                    line.strip()
-                    for line in response.read().decode("utf-8").splitlines()
-                    if line.strip()
-                ]
-        except Exception as exc:
-            last_error = exc
+    for _ in range(3):
+        for base in bases:
+            try:
+                with urlopen(Request(f"{base}/{path}", headers=URL_HEADERS), timeout=30) as response:
+                    urls = [
+                        line.strip()
+                        for line in response.read().decode("utf-8").splitlines()
+                        if line.strip()
+                    ]
+                    _write_cached_url_list(path, urls)
+                    return urls
+            except Exception as exc:
+                last_error = exc
+            time.sleep(2)
     raise RuntimeError(f"Failed to load RedPajama URL list {path}: {last_error}")
+
+
+def _read_url_list(path):
+    cached_urls = _read_cached_url_list(path)
+    if cached_urls is not None:
+        return cached_urls
+
+    lock_path = _redpajama_cache_dir() / "url_lists.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        cached_urls = _read_cached_url_list(path)
+        if cached_urls is not None:
+            return cached_urls
+        return _download_url_list(path)
 
 
 def _iter_domain_examples(args, domain):

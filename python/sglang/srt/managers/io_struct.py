@@ -1667,6 +1667,17 @@ class SaveCSDTableReqOutput(BaseReq):
 
 
 @dataclass
+class SaveCSDDebugReqInput(BaseReq):
+    path: Optional[str] = None
+
+
+@dataclass
+class SaveCSDDebugReqOutput(BaseReq):
+    success: bool
+    message: str
+
+
+@dataclass
 class RpcReqInput(BaseReq):
     method: str
     parameters: Optional[Dict] = None

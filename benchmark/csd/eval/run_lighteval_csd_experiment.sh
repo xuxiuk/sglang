@@ -30,19 +30,19 @@ LIGHTEVAL_OVERRIDE_CHAT_TEMPLATE=${LIGHTEVAL_OVERRIDE_CHAT_TEMPLATE:-auto}
 LIGHTEVAL_REMOVE_REASONING_TAGS=${LIGHTEVAL_REMOVE_REASONING_TAGS:-1}
 LIGHTEVAL_REASONING_TAGS="${LIGHTEVAL_REASONING_TAGS:-[('<think>', '</think>')]}"
 
-THINK_TASKS=${THINK_TASKS:-"aime25 lcb:codegeneration_v6 minerva_math500"}
+THINK_TASKS=${THINK_TASKS:-"aime25 minerva_math500"}
+CODING_TASKS=${CODING_TASKS:-"lcb:codegeneration_v6"}
 NO_THINK_TASKS=${NO_THINK_TASKS:-"gsm8k"}
-# THINK_TASKS=${THINK_TASKS:-"aime25 minerva_math500"}
-# NO_THINK_TASKS=${NO_THINK_TASKS:-"gsm8k lcb:codegeneration_v6"}
-TASKS=${TASKS:-"${NO_THINK_TASKS} ${THINK_TASKS}"}
+TASKS=${TASKS:-"${NO_THINK_TASKS} ${THINK_TASKS} ${CODING_TASKS}"}
 NUM_FEWSHOT=${NUM_FEWSHOT:-0}
 LIMIT=${LIMIT:-}
-MAX_GEN_TOKS=${MAX_GEN_TOKS:-64000}
+MAX_GEN_TOKS=${MAX_GEN_TOKS:-81920}
 MAX_LENGTH=${MAX_LENGTH:-96000}
 GEN_KWARGS=${GEN_KWARGS:-}
 RUN_VARIANT=${RUN_VARIANT:-}
 THINK_GEN_KWARGS=${THINK_GEN_KWARGS:-temperature=1.0,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=1.5,repetition_penalty=1.0}
-NO_THINK_GEN_KWARGS=${NO_THINK_GEN_KWARGS:-temperature=0.0}
+CODING_GEN_KWARGS=${CODING_GEN_KWARGS:-temperature=0.6,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=0.0,repetition_penalty=1.0}
+NO_THINK_GEN_KWARGS=${NO_THINK_GEN_KWARGS:-temperature=1.0,top_p=1.0,top_k=40,min_p=0.0,presence_penalty=2.0,repetition_penalty=1.0}
 
 SPEC_NUM_STEPS=${SPEC_NUM_STEPS:-5}
 SPEC_TOPK=${SPEC_TOPK:-3}
@@ -114,12 +114,16 @@ keys = [
     "LIGHTEVAL_REASONING_TAGS",
     "TASKS",
     "THINK_TASKS",
+    "CODING_TASKS",
     "NO_THINK_TASKS",
     "NUM_FEWSHOT",
     "LIMIT",
     "MAX_GEN_TOKS",
     "MAX_LENGTH",
     "GEN_KWARGS",
+    "THINK_GEN_KWARGS",
+    "CODING_GEN_KWARGS",
+    "NO_THINK_GEN_KWARGS",
     "RUN_VARIANT",
     "SPEC_NUM_STEPS",
     "SPEC_TOPK",
@@ -142,6 +146,17 @@ task_uses_thinking() {
   local task="$1"
   local item
   for item in ${THINK_TASKS}; do
+    if [[ "${item}" == "${task}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+task_uses_coding() {
+  local task="$1"
+  local item
+  for item in ${CODING_TASKS}; do
     if [[ "${item}" == "${task}" ]]; then
       return 0
     fi
@@ -192,6 +207,8 @@ run_lighteval_task() {
   local gen_kwargs
   if [[ -n "${GEN_KWARGS}" ]]; then
     gen_kwargs="${GEN_KWARGS}"
+  elif task_uses_coding "${task}"; then
+    gen_kwargs="${CODING_GEN_KWARGS}"
   elif task_uses_thinking "${task}"; then
     gen_kwargs="${THINK_GEN_KWARGS}"
   else
@@ -420,21 +437,21 @@ if [[ ! -f "${CSD_TABLE_PATH}" ]]; then
 fi
 
 # LCB temp=1 / temp=0 comparison with details enabled.
-# TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp1 GEN_KWARGS="temperature=1.0,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=1.5,repetition_penalty=1.0" run_lighteval_suite "baseline" auto
-# TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp1 GEN_KWARGS="temperature=1.0,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=1.5,repetition_penalty=1.0" run_lighteval_suite "vanilla" auto steps=5 topk=3 draft=15
-# TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp1 GEN_KWARGS="temperature=1.0,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=1.5,repetition_penalty=1.0" run_lighteval_suite "vanilla" auto steps=5 topk=1 draft=5
-# TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp1 GEN_KWARGS="temperature=1.0,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=1.5,repetition_penalty=1.0" run_lighteval_suite "csd" auto ratio=0.3 steps=5 topk=3 draft=15
-# TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp1 GEN_KWARGS="temperature=1.0,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=1.5,repetition_penalty=1.0" run_lighteval_suite "csd" auto dynamic_update=1 ratio=0.3 steps=5 topk=3 draft=15
-# TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp1 GEN_KWARGS="temperature=1.0,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=1.5,repetition_penalty=1.0" run_lighteval_suite "csd" auto ratio=0.3 steps=5 topk=1 draft=5
-# TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp1 GEN_KWARGS="temperature=1.0,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=1.5,repetition_penalty=1.0" run_lighteval_suite "csd" auto dynamic_update=1 ratio=0.3 steps=5 topk=1 draft=5
+# TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp1 GEN_KWARGS="temperature=0.6,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=0.0,repetition_penalty=1.0" run_lighteval_suite "baseline" auto
+# TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp1 GEN_KWARGS="temperature=0.6,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=0.0,repetition_penalty=1.0" run_lighteval_suite "vanilla" auto steps=5 topk=3 draft=15
+# TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp1 GEN_KWARGS="temperature=0.6,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=0.0,repetition_penalty=1.0" run_lighteval_suite "vanilla" auto steps=5 topk=1 draft=5
+# TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp1 GEN_KWARGS="temperature=0.6,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=0.0,repetition_penalty=1.0" run_lighteval_suite "csd" auto ratio=0.3 steps=5 topk=3 draft=15
+# TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp1 GEN_KWARGS="temperature=0.6,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=0.0,repetition_penalty=1.0" run_lighteval_suite "csd" auto dynamic_update=1 ratio=0.3 steps=5 topk=3 draft=15
+# TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp1 GEN_KWARGS="temperature=0.6,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=0.0,repetition_penalty=1.0" run_lighteval_suite "csd" auto ratio=0.3 steps=5 topk=1 draft=5
+# TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp1 GEN_KWARGS="temperature=0.6,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=0.0,repetition_penalty=1.0" run_lighteval_suite "csd" auto dynamic_update=1 ratio=0.3 steps=5 topk=1 draft=5
 
-TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp0 GEN_KWARGS="temperature=0.0" run_lighteval_suite "baseline" auto
-TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp0 GEN_KWARGS="temperature=0.0" run_lighteval_suite "vanilla" auto steps=5 topk=3 draft=15
-TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp0 GEN_KWARGS="temperature=0.0" run_lighteval_suite "vanilla" auto steps=5 topk=1 draft=5
-TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp0 GEN_KWARGS="temperature=0.0" run_lighteval_suite "csd" auto ratio=0.3 steps=5 topk=3 draft=15
-TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp0 GEN_KWARGS="temperature=0.0" run_lighteval_suite "csd" auto dynamic_update=1 ratio=0.3 steps=5 topk=3 draft=15
-TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp0 GEN_KWARGS="temperature=0.0" run_lighteval_suite "csd" auto ratio=0.3 steps=5 topk=1 draft=5
-TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp0 GEN_KWARGS="temperature=0.0" run_lighteval_suite "csd" auto dynamic_update=1 ratio=0.3 steps=5 topk=1 draft=5
+TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp0 GEN_KWARGS="temperature=0.0,presence_penalty=0.0,repetition_penalty=1.0" run_lighteval_suite "baseline" auto
+TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp0 GEN_KWARGS="temperature=0.0,presence_penalty=0.0,repetition_penalty=1.0" run_lighteval_suite "vanilla" auto steps=5 topk=3 draft=15
+TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp0 GEN_KWARGS="temperature=0.0,presence_penalty=0.0,repetition_penalty=1.0" run_lighteval_suite "vanilla" auto steps=5 topk=1 draft=5
+TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp0 GEN_KWARGS="temperature=0.0,presence_penalty=0.0,repetition_penalty=1.0" run_lighteval_suite "csd" auto ratio=0.3 steps=5 topk=3 draft=15
+TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp0 GEN_KWARGS="temperature=0.0,presence_penalty=0.0,repetition_penalty=1.0" run_lighteval_suite "csd" auto dynamic_update=1 ratio=0.3 steps=5 topk=3 draft=15
+TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp0 GEN_KWARGS="temperature=0.0,presence_penalty=0.0,repetition_penalty=1.0" run_lighteval_suite "csd" auto ratio=0.3 steps=5 topk=1 draft=5
+TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp0 GEN_KWARGS="temperature=0.0,presence_penalty=0.0,repetition_penalty=1.0" run_lighteval_suite "csd" auto dynamic_update=1 ratio=0.3 steps=5 topk=1 draft=5
 
 # Example overrides:
 # run_lighteval_suite "csd" auto tasks="gsm8k aime25" dynamic_update=1 threshold=6 ratio=0.01 steps=5 topk=3 draft=15

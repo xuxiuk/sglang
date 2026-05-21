@@ -27,6 +27,10 @@ SPEC_DRAFT_TOKENS=${SPEC_DRAFT_TOKENS:-15}
 CSD_FREQ_THRESHOLD=${CSD_FREQ_THRESHOLD:-3}
 CSD_PROB_RATIO=${CSD_PROB_RATIO:-0.01}
 CSD_DELTA_CAPACITY=${CSD_DELTA_CAPACITY:-16777216}
+CSD_DEBUG_STATS=${CSD_DEBUG_STATS:-0}
+CSD_DEBUG_EVENT_CAPACITY=${CSD_DEBUG_EVENT_CAPACITY:-1048576}
+CSD_DEBUG_SAMPLE_RATE=${CSD_DEBUG_SAMPLE_RATE:-1000}
+CSD_DEBUG_SAVE_PATH=${CSD_DEBUG_SAVE_PATH:-}
 MEM_FRACTION_STATIC=${MEM_FRACTION_STATIC:-0.85}
 WATCHDOG_TIMEOUT=${WATCHDOG_TIMEOUT:-3000}
 SGLANG_TORCH_PROFILER_DIR=${SGLANG_TORCH_PROFILER_DIR:-/home/zhouxuwen/sglang/benchmark/csd/runs/profiles}
@@ -144,6 +148,15 @@ start_record_server() {
   echo "Starting RedPajama CSD record server, log: ${SERVER_LOG}"
   kill_port_servers
   wait_for_port_free
+  local debug_args=()
+  if [[ "${CSD_DEBUG_STATS}" == "1" ]]; then
+    debug_args+=(--speculative-csd-debug-stats)
+    debug_args+=(--speculative-csd-debug-event-capacity "${CSD_DEBUG_EVENT_CAPACITY}")
+    debug_args+=(--speculative-csd-debug-sample-rate "${CSD_DEBUG_SAMPLE_RATE}")
+    if [[ -n "${CSD_DEBUG_SAVE_PATH}" ]]; then
+      debug_args+=(--speculative-csd-debug-save-path "${CSD_DEBUG_SAVE_PATH}")
+    fi
+  fi
   setsid env \
     CUDA_VISIBLE_DEVICES="${CUDA_DEVICES}" \
     SGLANG_TORCH_PROFILER_DIR="${SGLANG_TORCH_PROFILER_DIR}" \
@@ -163,7 +176,10 @@ start_record_server() {
       --speculative-csd \
       --speculative-csd-dynamic-update \
       --speculative-csd-delta-capacity "${CSD_DELTA_CAPACITY}" \
-      --speculative-csd-force-accept-disabled >"${SERVER_LOG}" 2>&1 &
+      --speculative-csd-freq-threshold "${CSD_FREQ_THRESHOLD}" \
+      --speculative-csd-prob-ratio "${CSD_PROB_RATIO}" \
+      --speculative-csd-force-accept-disabled \
+      "${debug_args[@]}" >"${SERVER_LOG}" 2>&1 &
   SERVER_PID=$!
   SERVER_PGID=$(ps -o pgid= -p "${SERVER_PID}" 2>/dev/null | tr -d ' ' || true)
   wait_for_server

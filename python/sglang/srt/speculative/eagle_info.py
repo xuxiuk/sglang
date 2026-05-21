@@ -364,8 +364,10 @@ class EagleVerifyInput(SpecInput, EagleVerifyInputV2Mixin):
                 csd_force_accept_disabled=bool(
                     csd_runtime and csd_runtime.force_accept_disabled
                 ),
-                csd_logit_margin=math.log(
-                    get_global_server_args().speculative_csd_prob_ratio
+                csd_logit_margin=(
+                    math.log(get_global_server_args().speculative_csd_prob_ratio)
+                    if get_global_server_args().speculative_csd_prob_ratio > 0
+                    else float("-inf")
                 ),
             )
 
@@ -440,6 +442,56 @@ class EagleVerifyInput(SpecInput, EagleVerifyInputV2Mixin):
                 csd_delta_pair_ct=(
                     csd_runtime.metrics.delta_pair_ct if csd_runtime else None
                 ),
+                csd_delta_float_stats=(
+                    csd_runtime.delta_buffer.float_stats
+                    if csd_runtime and csd_runtime.delta_buffer is not None
+                    else None
+                ),
+                csd_delta_int_stats=(
+                    csd_runtime.delta_buffer.int_stats
+                    if csd_runtime and csd_runtime.delta_buffer is not None
+                    else None
+                ),
+                csd_debug_event_pairs=(
+                    csd_runtime.debug_event_buffer.pairs
+                    if csd_runtime and csd_runtime.debug_event_buffer is not None
+                    else None
+                ),
+                csd_debug_event_float_stats=(
+                    csd_runtime.debug_event_buffer.float_stats
+                    if csd_runtime and csd_runtime.debug_event_buffer is not None
+                    else None
+                ),
+                csd_debug_event_int_stats=(
+                    csd_runtime.debug_event_buffer.int_stats
+                    if csd_runtime and csd_runtime.debug_event_buffer is not None
+                    else None
+                ),
+                csd_debug_event_counter=(
+                    csd_runtime.debug_event_buffer.counter
+                    if csd_runtime and csd_runtime.debug_event_buffer is not None
+                    else None
+                ),
+                csd_debug_event_capacity=(
+                    csd_runtime.debug_event_buffer.capacity
+                    if csd_runtime and csd_runtime.debug_event_buffer is not None
+                    else 0
+                ),
+                csd_debug_sample_rate=(
+                    csd_runtime.debug_event_buffer.sample_rate
+                    if csd_runtime and csd_runtime.debug_event_buffer is not None
+                    else 1
+                ),
+                csd_debug_stats_enabled=bool(
+                    csd_runtime
+                    and (
+                        (
+                            csd_runtime.delta_buffer is not None
+                            and csd_runtime.delta_buffer.stats_enabled
+                        )
+                        or csd_runtime.debug_event_buffer is not None
+                    )
+                ),
                 csd_table_capacity=csd_runtime.table.capacity if csd_runtime else 0,
                 csd_table_max_probe=csd_runtime.table.max_probe if csd_runtime else 0,
                 csd_delta_capacity=(
@@ -456,8 +508,10 @@ class EagleVerifyInput(SpecInput, EagleVerifyInputV2Mixin):
                 csd_force_accept_disabled=bool(
                     csd_runtime and csd_runtime.force_accept_disabled
                 ),
-                csd_logit_margin=math.log(
-                    get_global_server_args().speculative_csd_prob_ratio
+                csd_logit_margin=(
+                    math.log(get_global_server_args().speculative_csd_prob_ratio)
+                    if get_global_server_args().speculative_csd_prob_ratio > 0
+                    else float("-inf")
                 ),
                 threshold_single=get_global_server_args().speculative_accept_threshold_single,
                 threshold_acc=get_global_server_args().speculative_accept_threshold_acc,

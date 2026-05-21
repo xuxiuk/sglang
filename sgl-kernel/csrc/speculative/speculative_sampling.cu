@@ -47,6 +47,15 @@ void tree_speculative_sampling_target_only(
     at::Tensor csd_lookup_hit_ct,
     at::Tensor csd_forced_accept_ct,
     at::Tensor csd_delta_pair_ct,
+    at::Tensor csd_delta_float_stats,
+    at::Tensor csd_delta_int_stats,
+    at::Tensor csd_debug_event_pairs,
+    at::Tensor csd_debug_event_float_stats,
+    at::Tensor csd_debug_event_int_stats,
+    at::Tensor csd_debug_event_counter,
+    int64_t csd_debug_event_capacity,
+    int64_t csd_debug_sample_rate,
+    bool csd_debug_stats_enabled,
     int64_t csd_table_capacity,
     int64_t csd_table_max_probe,
     int64_t csd_delta_capacity,
@@ -71,6 +80,12 @@ void tree_speculative_sampling_target_only(
   CHECK_INPUT(csd_lookup_hit_ct);
   CHECK_INPUT(csd_forced_accept_ct);
   CHECK_INPUT(csd_delta_pair_ct);
+  CHECK_INPUT(csd_delta_float_stats);
+  CHECK_INPUT(csd_delta_int_stats);
+  CHECK_INPUT(csd_debug_event_pairs);
+  CHECK_INPUT(csd_debug_event_float_stats);
+  CHECK_INPUT(csd_debug_event_int_stats);
+  CHECK_INPUT(csd_debug_event_counter);
   auto device = target_probs.device();
   CHECK_EQ(candidates.device(), device);
   CHECK_EQ(retrive_index.device(), device);
@@ -86,6 +101,12 @@ void tree_speculative_sampling_target_only(
   CHECK_EQ(csd_lookup_hit_ct.device(), device);
   CHECK_EQ(csd_forced_accept_ct.device(), device);
   CHECK_EQ(csd_delta_pair_ct.device(), device);
+  CHECK_EQ(csd_delta_float_stats.device(), device);
+  CHECK_EQ(csd_delta_int_stats.device(), device);
+  CHECK_EQ(csd_debug_event_pairs.device(), device);
+  CHECK_EQ(csd_debug_event_float_stats.device(), device);
+  CHECK_EQ(csd_debug_event_int_stats.device(), device);
+  CHECK_EQ(csd_debug_event_counter.device(), device);
   CHECK_DIM(1, predicts);
   CHECK_DIM(2, accept_index);
   CHECK_DIM(1, accept_token_num);
@@ -103,6 +124,12 @@ void tree_speculative_sampling_target_only(
   CHECK_DIM(1, csd_lookup_hit_ct);
   CHECK_DIM(1, csd_forced_accept_ct);
   CHECK_DIM(1, csd_delta_pair_ct);
+  CHECK_DIM(2, csd_delta_float_stats);
+  CHECK_DIM(2, csd_delta_int_stats);
+  CHECK_DIM(1, csd_debug_event_pairs);
+  CHECK_DIM(2, csd_debug_event_float_stats);
+  CHECK_DIM(2, csd_debug_event_int_stats);
+  CHECK_DIM(1, csd_debug_event_counter);
   unsigned int batch_size = uniform_samples.size(0);
   unsigned int num_spec_step = accept_index.size(1);
   unsigned int num_draft_tokens = candidates.size(1);
@@ -177,6 +204,24 @@ void tree_speculative_sampling_target_only(
   if (csd_delta_pair_ct.scalar_type() != at::kLong) {
     throw std::runtime_error("Expected 'csd_delta_pair_ct' to be of type long (torch.int64).");
   }
+  if (csd_delta_float_stats.scalar_type() != at::kFloat) {
+    throw std::runtime_error("Expected 'csd_delta_float_stats' to be of type float (torch.float32).");
+  }
+  if (csd_delta_int_stats.scalar_type() != at::kInt) {
+    throw std::runtime_error("Expected 'csd_delta_int_stats' to be of type int (torch.int32).");
+  }
+  if (csd_debug_event_pairs.scalar_type() != at::kLong) {
+    throw std::runtime_error("Expected 'csd_debug_event_pairs' to be of type long (torch.int64).");
+  }
+  if (csd_debug_event_float_stats.scalar_type() != at::kFloat) {
+    throw std::runtime_error("Expected 'csd_debug_event_float_stats' to be of type float (torch.float32).");
+  }
+  if (csd_debug_event_int_stats.scalar_type() != at::kInt) {
+    throw std::runtime_error("Expected 'csd_debug_event_int_stats' to be of type int (torch.int32).");
+  }
+  if (csd_debug_event_counter.scalar_type() != at::kInt) {
+    throw std::runtime_error("Expected 'csd_debug_event_counter' to be of type int (torch.int32).");
+  }
   CHECK_GE(threshold_single, 0);
   CHECK_GE(1, threshold_single);
   CHECK_GE(threshold_acc, 0);
@@ -209,6 +254,15 @@ void tree_speculative_sampling_target_only(
       static_cast<int64_t*>(csd_lookup_hit_ct.data_ptr()),
       static_cast<int64_t*>(csd_forced_accept_ct.data_ptr()),
       static_cast<int64_t*>(csd_delta_pair_ct.data_ptr()),
+      static_cast<float*>(csd_delta_float_stats.data_ptr()),
+      static_cast<int32_t*>(csd_delta_int_stats.data_ptr()),
+      static_cast<int64_t*>(csd_debug_event_pairs.data_ptr()),
+      static_cast<float*>(csd_debug_event_float_stats.data_ptr()),
+      static_cast<int32_t*>(csd_debug_event_int_stats.data_ptr()),
+      static_cast<int32_t*>(csd_debug_event_counter.data_ptr()),
+      static_cast<uint32_t>(csd_debug_event_capacity),
+      static_cast<uint32_t>(csd_debug_sample_rate),
+      csd_debug_stats_enabled,
       static_cast<uint32_t>(csd_table_capacity),
       static_cast<uint32_t>(csd_table_max_probe),
       static_cast<uint32_t>(csd_delta_capacity),

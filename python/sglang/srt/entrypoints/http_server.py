@@ -130,6 +130,7 @@ from sglang.srt.managers.io_struct import (
     ProfileReqInput,
     ReleaseMemoryOccupationReqInput,
     ResumeMemoryOccupationReqInput,
+    SaveCSDDebugReqInput,
     SaveCSDTableReqInput,
     SendWeightsToRemoteInstanceReqInput,
     SeparateReasoningReqInput,
@@ -940,6 +941,19 @@ async def dump_expert_distribution_record_async():
 @auth_level(AuthLevel.ADMIN_OPTIONAL)
 async def save_csd_table(obj: SaveCSDTableReqInput, request: Request):
     success, message = await _global_state.tokenizer_manager.save_csd_table(obj, request)
+    content = {"success": success, "message": message}
+    return ORJSONResponse(
+        content,
+        status_code=HTTPStatus.OK if success else HTTPStatus.BAD_REQUEST,
+    )
+
+
+@app.post("/save_csd_debug_events")
+@auth_level(AuthLevel.ADMIN_OPTIONAL)
+async def save_csd_debug_events(obj: SaveCSDDebugReqInput, request: Request):
+    success, message = await _global_state.tokenizer_manager.save_csd_debug_events(
+        obj, request
+    )
     content = {"success": success, "message": message}
     return ORJSONResponse(
         content,
