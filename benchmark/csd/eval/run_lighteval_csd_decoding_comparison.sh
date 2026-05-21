@@ -316,8 +316,8 @@ run_method_set() {
   local enable_thinking="$4"
   local max_gen_toks="$5"
   local max_length="$6"
-  # local methods=(baseline vanilla csd_plain_table_static csd_plain_table csd_plain_table_top5 csd_ratio_table_static csd_ratio_table csd_ratio_table_top5)
-  local methods=(baseline vanilla csd_plain_table_static csd_plain_table)
+  local methods=(baseline vanilla csd_plain_table_static csd_plain_table csd_plain_table_top5 csd_ratio_table_static csd_ratio_table csd_ratio_table_top5)
+  # local methods=(baseline vanilla csd_plain_table_static csd_plain_table)
   local method status
 
   if [[ "${TASK_FILTER}" != "all" && "${TASK_FILTER}" != "${task_slug}" ]]; then
@@ -358,10 +358,10 @@ run_method_set() {
   done
 }
 
-run_method_set "lcb" "${LCB_TASK}" "${CODING_RECOMMENDED_GEN_KWARGS}" true "${LCB_MAX_GEN_TOKS}" "${LCB_MAX_LENGTH}"
+# run_method_set "lcb" "${LCB_TASK}" "${CODING_RECOMMENDED_GEN_KWARGS}" true "${LCB_MAX_GEN_TOKS}" "${LCB_MAX_LENGTH}"
 run_method_set "aime25" "${AIME_TASK}" "${THINK_GENERAL_RECOMMENDED_GEN_KWARGS}" true "${AIME_MAX_GEN_TOKS}" "${AIME_MAX_LENGTH}"
 run_method_set "math500" "${MATH500_TASK}" "${THINK_GENERAL_RECOMMENDED_GEN_KWARGS}" true "${MATH500_MAX_GEN_TOKS}" "${MATH500_MAX_LENGTH}"
-run_method_set "gsm8k" "${GSM8K_TASK}" "${THINK_GENERAL_RECOMMENDED_GEN_KWARGS}" true "${GSM8K_MAX_GEN_TOKS}" "${GSM8K_MAX_LENGTH}"
+# run_method_set "gsm8k" "${GSM8K_TASK}" "${THINK_GENERAL_RECOMMENDED_GEN_KWARGS}" true "${GSM8K_MAX_GEN_TOKS}" "${GSM8K_MAX_LENGTH}"
 
 echo "Done."
 echo "OUT_DIR=${OUT_DIR}"

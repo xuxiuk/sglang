@@ -1,0 +1,10 @@
+script field,observed value
+BATCH_SIZES,8 16 32 48 64
+NUM_RUNS observed,1
+repeat_idx values,1
+MODES,csd vanilla
+SPEC_SHAPES,serial:5:1:5 | tree:5:3:15
+CSD_DYNAMIC_UPDATES observed,0 1
+TASKS,aime25 gsm8k
+CSD_FREQ_THRESHOLD,6
+CSD_PROB_RATIO,0.3

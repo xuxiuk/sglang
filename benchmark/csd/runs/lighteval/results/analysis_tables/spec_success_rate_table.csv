@@ -1,0 +1,9 @@
+base_task,spec_shape,vanilla,csd-static,csd-dyn
+aime25,steps5_topk1_draft5,0.5592,0.6964,0.7392
+aime25,steps5_topk3_draft15,0.7371,0.832,0.8643
+gsm8k,steps5_topk1_draft5,0.7267,0.7839,0.7795
+gsm8k,steps5_topk3_draft15,0.8548,0.8958,0.9011
+lcb:codegeneration_v6,steps5_topk1_draft5,0.4721,,
+lcb:codegeneration_v6,steps5_topk3_draft15,0.6579,0.7679,
+math_500,steps5_topk1_draft5,0.5591,0.6978,0.7527
+math_500,steps5_topk3_draft15,0.7294,0.8311,0.8642

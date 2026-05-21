@@ -1,0 +1,13 @@
+base_task,variant,spec_shape,csd_prob_ratio,accuracy,throughput,latency_sec,spec_success_rate,line
+aime25,csd-static,steps5_topk1_draft5,0.3,0.9,1899.41,413.388,0.6964,22
+aime25,csd-dyn,steps5_topk1_draft5,0.3,0.8,1659.405,512.534,0.7392,26
+aime25,vanilla,steps5_topk1_draft5,0.01,0.9,1617.761,486.145,0.5592,18
+gsm8k,vanilla,steps5_topk1_draft5,0.01,0.922669,2670.585,850.417,0.7267,17
+gsm8k,csd-static,steps5_topk1_draft5,0.3,0.915845,2640.73,889.897,0.7839,21
+gsm8k,vanilla,steps5_topk3_draft15,0.01,0.921911,2469.254,814.544,0.8548,5
+lcb:codegeneration_v6,vanilla,steps5_topk1_draft5,0.01,0.72,1952.751,2721.216,0.4721,32
+lcb:codegeneration_v6,csd-static,steps5_topk3_draft15,0.3,0.714286,1652.432,3181.074,0.7679,33
+lcb:codegeneration_v6,baseline,baseline,0.01,0.788571,1588.602,3337.349,0.0,30
+math_500,csd-static,steps5_topk1_draft5,0.3,0.834,3218.101,1176.122,0.6978,24
+math_500,vanilla,steps5_topk1_draft5,0.01,0.824,2789.722,1519.02,0.5591,20
+math_500,csd-dyn,steps5_topk1_draft5,0.3,0.832,2317.696,1684.98,0.7527,28

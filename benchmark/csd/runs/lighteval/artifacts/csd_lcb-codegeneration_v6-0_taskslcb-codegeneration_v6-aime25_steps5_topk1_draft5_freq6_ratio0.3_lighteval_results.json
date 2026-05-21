@@ -1,0 +1,207 @@
+{
+  "config_general": {
+    "lighteval_sha": "?",
+    "num_fewshot_seeds": 1,
+    "max_samples": null,
+    "job_id": "0",
+    "start_time": 4265350.695381253,
+    "end_time": 4265949.697156559,
+    "total_evaluation_time_secondes": "599.0017753057182",
+    "model_config": "model_name='/home/shared/models/Qwen/Qwen3.5-35B-A3B' generation_parameters=GenerationParameters(num_blocks=None, block_size=None, early_stopping=None, repetition_penalty=1.0, frequency_penalty=None, length_penalty=None, presence_penalty=1.5, max_new_tokens=64000, min_new_tokens=None, seed=None, stop_tokens=None, temperature=1.0, top_k=20, min_p=0.0, top_p=0.95, truncate_prompt=None, cache_implementation=None, response_format=None) system_prompt=None cache_dir='~/.cache/huggingface/lighteval' tokenizer_path='/home/shared/models/Qwen/Qwen3.5-35B-A3B' tokenizer_mode='auto' load_format='auto' dtype='auto' tp_size=2 dp_size=1 context_length=96000 random_seed=1234 trust_remote_code=True device='cuda' skip_tokenizer_init=False kv_cache_dtype='auto' add_special_tokens=True pairwise_tokenization=False sampling_backend=None attention_backend=None mem_fraction_static=0.85 max_running_requests=48 chunked_prefill_size=4096 watchdog_timeout=3000.0 mamba_scheduler_strategy='no_buffer' log_level='warning' override_chat_template=None collect_spec_metrics=True speculative_algorithm='EAGLE' speculative_num_steps=5 speculative_eagle_topk=1 speculative_num_draft_tokens=5 speculative_csd=None speculative_csd_enabled=True speculative_csd_table_path='/home/zhouxuwen/sglang/benchmark/csd/runs/redpajama/csd_table_redpajama_6domains_n1000_Qwen3.5-35B-A3B_mtp_EAGLE_temp1.0.json' speculative_csd_freq_threshold=6 speculative_csd_prob_ratio=0.3 speculative_csd_dynamic_update=False speculative_csd_force_accept_disabled=False",
+    "model_name": "/home/shared/models/Qwen/Qwen3.5-35B-A3B"
+  },
+  "results": {
+    "lcb:codegeneration_v6:0": {
+      "codegen_pass@1:16": 0.7142857142857143,
+      "codegen_pass@1:16_stderr": 0.03424737867752746
+    },
+    "all": {
+      "codegen_pass@1:16": 0.7142857142857143,
+      "codegen_pass@1:16_stderr": 0.03424737867752746
+    }
+  },
+  "versions": {},
+  "config_tasks": {
+    "lcb:codegeneration_v6:0": {
+      "name": "lcb:codegeneration_v6",
+      "prompt_function": "lcb_codegeneration_prompt_fn",
+      "hf_repo": "lighteval/code_generation_lite",
+      "hf_subset": "v6",
+      "metrics": [
+        {
+          "metric_name": "codegen_pass@1:16",
+          "higher_is_better": true,
+          "category": "GENERATIVE",
+          "sample_level_fn": "CodegenMetric()",
+          "corpus_level_fn": "mean",
+          "batched_compute": false
+        }
+      ],
+      "hf_data_files": null,
+      "solver": null,
+      "scorer": null,
+      "sample_fields": null,
+      "sample_to_fewshot": null,
+      "filter": null,
+      "hf_revision": null,
+      "hf_filter": null,
+      "hf_avail_splits": [
+        "test"
+      ],
+      "evaluation_splits": [
+        "test"
+      ],
+      "few_shots_split": null,
+      "few_shots_select": null,
+      "generation_size": 32768,
+      "generation_grammar": null,
+      "stop_sequence": [],
+      "num_samples": null,
+      "original_num_docs": -1,
+      "effective_num_docs": -1,
+      "must_remove_duplicate_docs": false,
+      "num_fewshots": 0,
+      "version": 0
+    }
+  },
+  "summary_tasks": {
+    "lcb:codegeneration_v6:0": {
+      "hashes": {
+        "hash_examples": "5d9558779ff7cffd",
+        "hash_full_prompts": "ef46db3751d8e999",
+        "hash_input_tokens": "9e9a97493feb0905",
+        "hash_cont_tokens": "2995157c7852bfe2"
+      },
+      "truncated": 0,
+      "non_truncated": 0,
+      "padded": 0,
+      "non_padded": 0
+    }
+  },
+  "summary_general": {
+    "hashes": {
+      "hash_examples": "b2ecda5491fbae79",
+      "hash_full_prompts": "c166e5d20ad58f4e",
+      "hash_input_tokens": "a13526b1318824fa",
+      "hash_cont_tokens": "6dcde702a895e359"
+    },
+    "truncated": 0,
+    "non_truncated": 0,
+    "padded": 0,
+    "non_padded": 0
+  },
+  "sglang": {
+    "run_config": {
+      "run_tag": "csd_lcb-codegeneration_v6-0_taskslcb-codegeneration_v6-aime25_steps5_topk1_draft5_freq6_ratio0.3",
+      "mode": "csd",
+      "experiment_config": {
+        "mode": "csd",
+        "server_log": "in_process_lighteval",
+        "out_dir": null,
+        "artifact_dir": null,
+        "result_dir": null,
+        "result_file": null,
+        "model_path": null,
+        "tokenizer_path": null,
+        "cuda_devices": null,
+        "tp_size": null,
+        "mem_fraction_static": null,
+        "max_running_requests": null,
+        "watchdog_timeout": null,
+        "mamba_scheduler_strategy": null,
+        "lighteval_python": null,
+        "lighteval_tasks": null,
+        "lighteval_custom_tasks": null,
+        "lighteval_output_dir": null,
+        "lighteval_dataset_loading_processes": null,
+        "lighteval_num_fewshot_seeds": null,
+        "lighteval_bootstrap_iters": null,
+        "lighteval_override_chat_template": null,
+        "lighteval_remove_reasoning_tags": null,
+        "lighteval_reasoning_tags": null,
+        "tasks": null,
+        "think_tasks": null,
+        "no_think_tasks": null,
+        "num_fewshot": null,
+        "limit": null,
+        "max_gen_toks": null,
+        "max_length": null,
+        "gen_kwargs": null,
+        "spec_num_steps": null,
+        "spec_topk": null,
+        "spec_draft_tokens": null,
+        "csd_freq_threshold": null,
+        "csd_prob_ratio": null,
+        "csd_dynamic_update": null,
+        "redpajama_samples_per_domain": null,
+        "redpajama_temperature": null,
+        "csd_table_path": null
+      },
+      "server_log": "in_process_lighteval",
+      "model": "/home/shared/models/Qwen/Qwen3.5-35B-A3B",
+      "tokenizer": "/home/shared/models/Qwen/Qwen3.5-35B-A3B",
+      "cuda_devices": "6,7",
+      "tensor_parallel_size": 2,
+      "data_parallel_size": 1,
+      "mem_fraction_static": 0.85,
+      "max_running_requests": 48,
+      "watchdog_timeout": 3000,
+      "mamba_scheduler_strategy": "no_buffer",
+      "log_level": "warning",
+      "tasks": [
+        "lcb:codegeneration_v6|0"
+      ],
+      "limit": null,
+      "max_gen_toks": 64000,
+      "max_length": 96000,
+      "trust_remote_code": true,
+      "gen_kwargs": "temperature=1.0,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=1.5,repetition_penalty=1.0",
+      "eval_framework": "lighteval",
+      "speculative": {
+        "algorithm": "EAGLE",
+        "num_steps": 5,
+        "eagle_topk": 1,
+        "num_draft_tokens": 5
+      },
+      "csd": {
+        "enabled": true,
+        "table_path": "/home/zhouxuwen/sglang/benchmark/csd/runs/redpajama/csd_table_redpajama_6domains_n1000_Qwen3.5-35B-A3B_mtp_EAGLE_temp1.0.json",
+        "freq_threshold": 6,
+        "prob_ratio": 0.3,
+        "dynamic_update": false,
+        "force_accept_disabled": false
+      }
+    },
+    "model_info": {
+      "model_path": "/home/shared/models/Qwen/Qwen3.5-35B-A3B",
+      "tokenizer_path": "/home/shared/models/Qwen/Qwen3.5-35B-A3B"
+    },
+    "server_config": {
+      "speculative_algorithm": "EAGLE",
+      "speculative_num_steps": 5,
+      "speculative_eagle_topk": 1,
+      "speculative_num_draft_tokens": 5,
+      "speculative_csd_enabled": true,
+      "speculative_csd_dynamic_update": false,
+      "speculative_csd_force_accept_disabled": false,
+      "speculative_csd_table_path": "/home/zhouxuwen/sglang/benchmark/csd/runs/redpajama/csd_table_redpajama_6domains_n1000_Qwen3.5-35B-A3B_mtp_EAGLE_temp1.0.json",
+      "speculative_csd_freq_threshold": 6,
+      "speculative_csd_prob_ratio": 0.3,
+      "tp_size": 2,
+      "dp_size": 1,
+      "mem_fraction_static": 0.85,
+      "max_running_requests": 48,
+      "context_length": 96000,
+      "watchdog_timeout": 3000,
+      "mamba_scheduler_strategy": "no_buffer",
+      "log_level": "warning"
+    },
+    "performance": {
+      "elapsed_sec": 232.66,
+      "request_throughput": 0.0,
+      "output_token_throughput": 0.0,
+      "total_token_throughput": 0.0
+    },
+    "speculative_metrics": null
+  }
+}

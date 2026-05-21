@@ -1,0 +1,23 @@
+/home/zhouxuwen/miniconda3/envs/sglang/lib/python3.10/site-packages/torch/cuda/__init__.py:827: UserWarning: Can't initialize NVML
+  warnings.warn("Can't initialize NVML")
+/home/zhouxuwen/sglang/python/sglang/srt/layers/attention/fla/utils.py:223: UserWarning: Triton is not supported on current platform, roll back to CPU.
+  warnings.warn(
+Traceback (most recent call last):
+  File "/home/zhouxuwen/miniconda3/envs/sglang/bin/sglang", line 6, in <module>
+    sys.exit(main())
+  File "/home/zhouxuwen/sglang/python/sglang/cli/main.py", line 40, in main
+    serve(args, extra_argv)
+  File "/home/zhouxuwen/sglang/python/sglang/cli/serve.py", line 122, in serve
+    server_args = prepare_server_args(dispatch_argv)
+  File "/home/zhouxuwen/sglang/python/sglang/srt/server_args.py", line 6641, in prepare_server_args
+    return ServerArgs.from_cli_args(raw_args)
+  File "/home/zhouxuwen/sglang/python/sglang/srt/server_args.py", line 6077, in from_cli_args
+    return cls(**{attr: getattr(args, attr) for attr in attrs})
+  File "<string>", line 361, in __init__
+  File "/home/zhouxuwen/sglang/python/sglang/srt/server_args.py", line 777, in __post_init__
+    self._handle_missing_default_values()
+  File "/home/zhouxuwen/sglang/python/sglang/srt/server_args.py", line 962, in _handle_missing_default_values
+    self.device = get_device()
+  File "/home/zhouxuwen/sglang/python/sglang/srt/utils/common.py", line 1853, in get_device
+    raise RuntimeError("No accelerator (CUDA, XPU, HPU, NPU, MUSA, MPS) is available.")
+RuntimeError: No accelerator (CUDA, XPU, HPU, NPU, MUSA, MPS) is available.
