@@ -176,6 +176,13 @@ benchmark/mmlu/data
 benchmark/mmlu/data.tar
 benchmark/llava_bench/images
 benchmark/llava_bench/mme_pack
+benchmark/csd/runs/
+benchmark/gsm8k/csd_no_tree_runs/
+benchmark/gsm8k/csd_runs/
+benchmark/lighteval_csd_runs/
+benchmark/lm_eval_csd_runs/
+benchmark/redpajama/csd_runs/
+sgl-kernel/csd/
 *.jsonl
 tmp*.txt
 

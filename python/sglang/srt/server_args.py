@@ -507,6 +507,7 @@ class ServerArgs:
     speculative_csd_delta_save_path: Optional[str] = None
     speculative_csd_delta_capacity: Optional[int] = None
     speculative_csd_rebuild_threshold: int = 4096
+    speculative_csd_rebuild_top_freq_ratio: Optional[float] = None
     speculative_csd_force_accept_disabled: bool = False
     speculative_token_map: Optional[str] = None
     speculative_attention_mode: str = "prefill"
@@ -3001,6 +3002,12 @@ class ServerArgs:
                 raise ValueError(
                     "--speculative-csd-prob-ratio must be in the range (0, 1]."
                 )
+            if self.speculative_csd_rebuild_top_freq_ratio is not None and not (
+                0 < self.speculative_csd_rebuild_top_freq_ratio <= 1
+            ):
+                raise ValueError(
+                    "--speculative-csd-rebuild-top-freq-ratio must be in the range (0, 1]."
+                )
             if (
                 not self.speculative_csd_dynamic_update
                 and self.speculative_csd_table_path is None
@@ -4910,6 +4917,12 @@ class ServerArgs:
             type=int,
             default=ServerArgs.speculative_csd_rebuild_threshold,
             help="Minimum number of dynamically collected CSD pairs required to trigger an online CSD table rebuild; set <= 0 to disable online rebuild.",
+        )
+        parser.add_argument(
+            "--speculative-csd-rebuild-top-freq-ratio",
+            type=float,
+            default=ServerArgs.speculative_csd_rebuild_top_freq_ratio,
+            help="Optional top-frequency pair ratio kept per local CSD table when an online CSD hash-table rebuild is triggered.",
         )
         parser.add_argument(
             "--speculative-csd-force-accept-disabled",

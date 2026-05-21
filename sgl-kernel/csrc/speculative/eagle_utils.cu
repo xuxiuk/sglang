@@ -373,7 +373,11 @@ __global__ void VerifyTreeGreedy(
 
       if (!normal_accept && (csd_enabled || csd_dynamic_update)) {
         int64_t csd_pair_key = CsdPackPair(draft_token_id, target_token_id);
-        if (csd_dynamic_update) {
+        size_t target_logit_offset = static_cast<size_t>(last_accepted_retrive_idx) * d;
+        DType draft_logit = target_logits[target_logit_offset + draft_token_id];
+        DType target_logit = target_logits[target_logit_offset + target_token_id];
+        bool csd_logit_pass = draft_logit >= target_logit + csd_logit_margin;
+        if (csd_dynamic_update && csd_logit_pass) {
           CsdAppendDelta(csd_delta_pairs, csd_delta_counter, csd_delta_pair_ct, csd_delta_capacity, csd_pair_key);
         }
 
@@ -383,10 +387,7 @@ __global__ void VerifyTreeGreedy(
           CsdAtomicAddI64(csd_lookup_hit_ct, 1ULL);
         }
         if (table_hit && !csd_force_accept_disabled) {
-          size_t target_logit_offset = static_cast<size_t>(last_accepted_retrive_idx) * d;
-          DType draft_logit = target_logits[target_logit_offset + draft_token_id];
-          DType target_logit = target_logits[target_logit_offset + target_token_id];
-          csd_force_accept = draft_logit >= target_logit + csd_logit_margin;
+          csd_force_accept = csd_logit_pass;
           if (csd_force_accept) {
             CsdAtomicAddI64(csd_forced_accept_ct, 1ULL);
           }

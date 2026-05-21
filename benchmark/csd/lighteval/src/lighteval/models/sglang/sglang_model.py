@@ -146,6 +146,7 @@ class SGLangModelConfig(ModelConfig):
     mamba_scheduler_strategy: str | None = None
     log_level: str | None = None
     override_chat_template: bool | None = None
+    chat_template_kwargs: dict[str, Any] | None = None
     collect_spec_metrics: bool = True
     use_sample_cache: bool = True
     speculative_algorithm: str | None = None
@@ -157,6 +158,7 @@ class SGLangModelConfig(ModelConfig):
     speculative_csd_table_path: str | None = None
     speculative_csd_freq_threshold: PositiveInt | None = None
     speculative_csd_prob_ratio: PositiveFloat | None = None
+    speculative_csd_rebuild_top_freq_ratio: PositiveFloat | None = None
     speculative_csd_dynamic_update: bool = False
     speculative_csd_force_accept_disabled: bool = False
     speculative_csd_save_table_path: str | None = None
@@ -190,7 +192,12 @@ class SGLangModel(LightevalModel):
             collect=config.collect_spec_metrics,
             speculative_num_steps=config.speculative_num_steps,
         )
-        self.prompt_manager = PromptManager(self.use_chat_template, self.tokenizer, config.system_prompt)
+        self.prompt_manager = PromptManager(
+            self.use_chat_template,
+            self.tokenizer,
+            config.system_prompt,
+            config.chat_template_kwargs,
+        )
 
         # Initialize cache for tokenization and predictions
         self._cache = SampleCache(config) if config.use_sample_cache else None
@@ -251,6 +258,7 @@ class SGLangModel(LightevalModel):
             "speculative_csd_table_path": config.speculative_csd_table_path,
             "speculative_csd_freq_threshold": config.speculative_csd_freq_threshold,
             "speculative_csd_prob_ratio": config.speculative_csd_prob_ratio,
+            "speculative_csd_rebuild_top_freq_ratio": config.speculative_csd_rebuild_top_freq_ratio,
             "watchdog_timeout": config.watchdog_timeout,
             "mamba_scheduler_strategy": config.mamba_scheduler_strategy,
             "log_level": config.log_level,

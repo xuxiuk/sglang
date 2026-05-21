@@ -13,17 +13,17 @@ REPO_ROOT=$(cd -- "${SCRIPT_DIR}/../../.." && pwd)
 OUT_DIR=${OUT_DIR:-/home/zhouxuwen/sglang/benchmark/csd/runs/redpajama}
 MODEL_PATH=${MODEL_PATH:-/home/shared/models/Qwen/Qwen3.5-35B-A3B}
 HOST=${HOST:-127.0.0.1}
-PORT=${PORT:-30002}
+PORT=${PORT:-30003}
 CUDA_DEVICES=${CUDA_DEVICES:-4,5}
 TP_SIZE=${TP_SIZE:-2}
-SAMPLES_PER_DOMAIN=${SAMPLES_PER_DOMAIN:-1500}
+SAMPLES_PER_DOMAIN=${SAMPLES_PER_DOMAIN:-1000}
 PARALLEL=${PARALLEL:-8}
 MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-512}
 TEMPERATURE=${TEMPERATURE:-1.0}
 TOP_P=${TOP_P:-1.0}
-SPEC_NUM_STEPS=${SPEC_NUM_STEPS:-5}
-SPEC_TOPK=${SPEC_TOPK:-3}
-SPEC_DRAFT_TOKENS=${SPEC_DRAFT_TOKENS:-15}
+SPEC_NUM_STEPS=${SPEC_NUM_STEPS:-3}
+SPEC_TOPK=${SPEC_TOPK:-1}
+SPEC_DRAFT_TOKENS=${SPEC_DRAFT_TOKENS:-3}
 CSD_FREQ_THRESHOLD=${CSD_FREQ_THRESHOLD:-3}
 CSD_PROB_RATIO=${CSD_PROB_RATIO:-0.01}
 CSD_DELTA_CAPACITY=${CSD_DELTA_CAPACITY:-16777216}
@@ -55,7 +55,8 @@ MODEL_NAME_PART=$(safe_filename_part "${MODEL_PATH}")
 DRAFT_MODEL_NAME=${DRAFT_MODEL_NAME:-mtp}
 DRAFT_MODEL_NAME_PART=$(safe_filename_part "${DRAFT_MODEL_NAME}")
 SPEC_ALGORITHM_PART=$(safe_filename_part "EAGLE")
-CSD_TABLE_PATH=${CSD_TABLE_PATH:-"${OUT_DIR}/csd_table_redpajama_6domains_n${SAMPLES_PER_DOMAIN}_${MODEL_NAME_PART}_${DRAFT_MODEL_NAME_PART}_${SPEC_ALGORITHM_PART}_temp${TEMPERATURE}.json"}
+SPEC_SHAPE_PART="steps${SPEC_NUM_STEPS}_topk${SPEC_TOPK}_draft${SPEC_DRAFT_TOKENS}"
+CSD_TABLE_PATH=${CSD_TABLE_PATH:-"${OUT_DIR}/csd_table_redpajama_logits_gated_6domains_n${SAMPLES_PER_DOMAIN}_${MODEL_NAME_PART}_${DRAFT_MODEL_NAME_PART}_${SPEC_ALGORITHM_PART}_${SPEC_SHAPE_PART}_temp${TEMPERATURE}_ratio${CSD_PROB_RATIO}.json"}
 
 SERVER_PID=""
 SERVER_PGID=""
@@ -162,6 +163,7 @@ start_record_server() {
       --speculative-num-draft-tokens "${SPEC_DRAFT_TOKENS}" \
       --speculative-csd \
       --speculative-csd-dynamic-update \
+      --speculative-csd-prob-ratio "${CSD_PROB_RATIO}" \
       --speculative-csd-delta-capacity "${CSD_DELTA_CAPACITY}" \
       --speculative-csd-force-accept-disabled >"${SERVER_LOG}" 2>&1 &
   SERVER_PID=$!

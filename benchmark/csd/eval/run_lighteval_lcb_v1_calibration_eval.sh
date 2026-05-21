@@ -34,13 +34,13 @@ CALIBRATION_TASK_PART=${CALIBRATION_TASK//[^A-Za-z0-9._-]/-}
 CALIBRATION_LIMIT=${CALIBRATION_LIMIT:-200}
 CALIBRATION_MAX_GEN_TOKS=${CALIBRATION_MAX_GEN_TOKS:-1024}
 CALIBRATION_MAX_LENGTH=${CALIBRATION_MAX_LENGTH:-96000}
-CALIBRATION_GEN_KWARGS=${CALIBRATION_GEN_KWARGS:-temperature=1.0,top_p=0.95,top_k=20,min_p=0.0}
+CALIBRATION_GEN_KWARGS=${CALIBRATION_GEN_KWARGS:-temperature=0.6,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=0.0,repetition_penalty=1.0}
 
 EVAL_TASK=${EVAL_TASK:-lcb:codegeneration_v6}
 EVAL_LIMIT=${EVAL_LIMIT:-}
-EVAL_MAX_GEN_TOKS=${EVAL_MAX_GEN_TOKS:-32768}
+EVAL_MAX_GEN_TOKS=${EVAL_MAX_GEN_TOKS:-81920}
 EVAL_MAX_LENGTH=${EVAL_MAX_LENGTH:-96000}
-EVAL_GEN_KWARGS=${EVAL_GEN_KWARGS:-temperature=1.0,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=1.5,repetition_penalty=1.0}
+EVAL_GEN_KWARGS=${EVAL_GEN_KWARGS:-temperature=0.6,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=0.0,repetition_penalty=1.0}
 
 LIGHTEVAL_SAVE_DETAILS=${LIGHTEVAL_SAVE_DETAILS:-1}
 LIGHTEVAL_DISABLE_SAMPLE_CACHE=${LIGHTEVAL_DISABLE_SAMPLE_CACHE:-1}
@@ -53,7 +53,7 @@ LIGHTEVAL_REASONING_TAGS="${LIGHTEVAL_REASONING_TAGS:-[('<think>', '</think>')]}
 SPEC_NUM_STEPS=${SPEC_NUM_STEPS:-5}
 SPEC_TOPK=${SPEC_TOPK:-3}
 SPEC_DRAFT_TOKENS=${SPEC_DRAFT_TOKENS:-15}
-CSD_FREQ_THRESHOLD=${CSD_FREQ_THRESHOLD:-6}
+CSD_FREQ_THRESHOLD=${CSD_FREQ_THRESHOLD:-3}
 CSD_PROB_RATIO=${CSD_PROB_RATIO:-0.3}
 
 safe_filename_part() {
@@ -77,10 +77,10 @@ CSD_TABLE_PATH=${CSD_TABLE_PATH:-"${TABLE_DIR}/${TABLE_NAME}"}
 CALIBRATION_RESULT_FILE=${CALIBRATION_RESULT_FILE:-"${RESULT_DIR}/lcb_v1_calibration_result.jsonl"}
 EVAL_RESULT_FILE=${EVAL_RESULT_FILE:-"${RESULT_DIR}/lcb_eval_result.jsonl"}
 
+CALIBRATION_SKIPPED=0
 if [[ -e "${CSD_TABLE_PATH}" ]]; then
-  echo "Refusing to overwrite existing CSD table: ${CSD_TABLE_PATH}" >&2
-  echo "Set CSD_TABLE_PATH to a new filename or RUN_STAMP to a new value." >&2
-  exit 1
+  CALIBRATION_SKIPPED=1
+  echo "CSD table already exists, skipping calibration: ${CSD_TABLE_PATH}"
 fi
 
 common_lighteval_args() {
@@ -164,19 +164,21 @@ run_lighteval() {
 }
 
 CALIBRATION_RUN_ID="calibration_${CALIBRATION_TASK_PART}_n${CALIBRATION_LIMIT}_${RUN_STAMP}_steps${SPEC_NUM_STEPS}_topk${SPEC_TOPK}_draft${SPEC_DRAFT_TOKENS}_freq${CSD_FREQ_THRESHOLD}_ratio${CSD_PROB_RATIO}"
-run_lighteval "calibration" "${CALIBRATION_TASK}" "${CALIBRATION_RUN_ID}" \
-  "${CALIBRATION_MAX_GEN_TOKS}" "${CALIBRATION_MAX_LENGTH}" "${CALIBRATION_GEN_KWARGS}" "${CALIBRATION_RESULT_FILE}" \
-  --limit "${CALIBRATION_LIMIT}" \
-  --speculative-algorithm EAGLE \
-  --speculative-num-steps "${SPEC_NUM_STEPS}" \
-  --speculative-eagle-topk "${SPEC_TOPK}" \
-  --speculative-num-draft-tokens "${SPEC_DRAFT_TOKENS}" \
-  --csd-enabled \
-  --csd-dynamic-update \
-  --csd-force-accept-disabled \
-  --csd-freq-threshold "${CSD_FREQ_THRESHOLD}" \
-  --csd-prob-ratio "${CSD_PROB_RATIO}" \
-  --csd-save-table-path "${CSD_TABLE_PATH}"
+if [[ "${CALIBRATION_SKIPPED}" -eq 0 ]]; then
+  run_lighteval "calibration" "${CALIBRATION_TASK}" "${CALIBRATION_RUN_ID}" \
+    "${CALIBRATION_MAX_GEN_TOKS}" "${CALIBRATION_MAX_LENGTH}" "${CALIBRATION_GEN_KWARGS}" "${CALIBRATION_RESULT_FILE}" \
+    --limit "${CALIBRATION_LIMIT}" \
+    --speculative-algorithm EAGLE \
+    --speculative-num-steps "${SPEC_NUM_STEPS}" \
+    --speculative-eagle-topk "${SPEC_TOPK}" \
+    --speculative-num-draft-tokens "${SPEC_DRAFT_TOKENS}" \
+    --csd-enabled \
+    --csd-dynamic-update \
+    --csd-force-accept-disabled \
+    --csd-freq-threshold "${CSD_FREQ_THRESHOLD}" \
+    --csd-prob-ratio "${CSD_PROB_RATIO}" \
+    --csd-save-table-path "${CSD_TABLE_PATH}"
+fi
 
 "${LIGHTEVAL_PYTHON}" - <<PY
 import json

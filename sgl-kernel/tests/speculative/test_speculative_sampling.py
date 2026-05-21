@@ -156,7 +156,34 @@ def test_tree_speculative_sampling_target_only(
     ), f"Accept token num mismatch for thresholds ({threshold_single}, {threshold_acc})"
 
 
-def test_tree_speculative_sampling_target_only_csd_force_accept():
+@pytest.mark.parametrize(
+    (
+        "draft_logit",
+        "csd_enabled",
+        "expected_predicts",
+        "expected_accept_index",
+        "expected_accept_token_num",
+        "expected_lookup_hit_ct",
+        "expected_forced_accept_ct",
+        "expected_delta_pair_ct",
+    ),
+    [
+        (9.5, True, [3, 2, -1], [[0, 1]], [1], 1, 1, 1),
+        (3.0, True, [2, -1, -1], [[0, -1]], [0], 1, 0, 0),
+        (9.5, False, [2, -1, -1], [[0, -1]], [0], 0, 0, 1),
+        (3.0, False, [2, -1, -1], [[0, -1]], [0], 0, 0, 0),
+    ],
+)
+def test_tree_speculative_sampling_target_only_csd_force_accept(
+    draft_logit,
+    csd_enabled,
+    expected_predicts,
+    expected_accept_index,
+    expected_accept_token_num,
+    expected_lookup_hit_ct,
+    expected_forced_accept_ct,
+    expected_delta_pair_ct,
+):
     device = "cuda"
     candidates = torch.tensor([[0, 3, 4]], dtype=torch.int64, device=device)
     retrive_index = torch.tensor([[0, 1, 2]], dtype=torch.int64, device=device)
@@ -170,7 +197,7 @@ def test_tree_speculative_sampling_target_only_csd_force_accept():
     draft_probs = torch.zeros_like(target_probs)
     target_logits = torch.zeros((1, 3, 8), dtype=torch.float32, device=device)
     target_logits[0, 0, 2] = 10.0
-    target_logits[0, 0, 3] = 9.5
+    target_logits[0, 0, 3] = draft_logit
 
     pair_key = _pack_csd_pair(3, 2)
     csd_table_keys = _build_csd_table([pair_key], capacity=8, max_probe=16)
@@ -206,7 +233,7 @@ def test_tree_speculative_sampling_target_only_csd_force_accept():
         csd_table_capacity=8,
         csd_table_max_probe=16,
         csd_delta_capacity=4,
-        csd_enabled=True,
+        csd_enabled=csd_enabled,
         csd_dynamic_update=True,
         csd_force_accept_disabled=False,
         csd_logit_margin=math.log(0.5),
@@ -215,14 +242,15 @@ def test_tree_speculative_sampling_target_only_csd_force_accept():
         deterministic=True,
     )
 
-    assert predicts.tolist() == [3, 2, -1]
-    assert accept_index.tolist() == [[0, 1]]
-    assert accept_token_num.tolist() == [1]
-    assert csd_lookup_hit_ct.item() == 1
-    assert csd_forced_accept_ct.item() == 1
-    assert csd_delta_pair_ct.item() == 1
-    assert csd_delta_counter.item() == 1
-    assert csd_delta_pairs[:1].tolist() == [pair_key]
+    assert predicts.tolist() == expected_predicts
+    assert accept_index.tolist() == expected_accept_index
+    assert accept_token_num.tolist() == expected_accept_token_num
+    assert csd_lookup_hit_ct.item() == expected_lookup_hit_ct
+    assert csd_forced_accept_ct.item() == expected_forced_accept_ct
+    assert csd_delta_pair_ct.item() == expected_delta_pair_ct
+    assert csd_delta_counter.item() == expected_delta_pair_ct
+    if expected_delta_pair_ct:
+        assert csd_delta_pairs[:1].tolist() == [pair_key]
 
 
 if __name__ == "__main__":

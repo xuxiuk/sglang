@@ -33,6 +33,96 @@ class TestPrepareServerArgs(CustomTestCase):
             {"rope_scaling": {"factor": 2.0, "rope_type": "linear"}},
         )
 
+    @patch("sglang.srt.server_args.ServerArgs._handle_other_validations")
+    @patch("sglang.srt.server_args.ServerArgs._handle_debug_utils")
+    @patch("sglang.srt.server_args.ServerArgs._handle_dllm_inference")
+    @patch("sglang.srt.server_args.ServerArgs._handle_deterministic_inference")
+    @patch("sglang.srt.server_args.ServerArgs._handle_cache_compatibility")
+    @patch("sglang.srt.server_args.ServerArgs._handle_environment_variables")
+    @patch("sglang.srt.server_args.ServerArgs._handle_tokenizer_batching")
+    @patch("sglang.srt.server_args.ServerArgs._handle_encoder_disaggregation")
+    @patch("sglang.srt.server_args.ServerArgs._handle_pd_disaggregation")
+    @patch("sglang.srt.server_args.ServerArgs._handle_load_format")
+    @patch("sglang.srt.server_args.ServerArgs._handle_pipeline_parallelism")
+    @patch("sglang.srt.server_args.ServerArgs._handle_elastic_ep")
+    @patch("sglang.srt.server_args.ServerArgs._handle_expert_distribution_metrics")
+    @patch("sglang.srt.server_args.ServerArgs._handle_eplb_and_dispatch")
+    @patch("sglang.srt.server_args.ServerArgs._handle_a2a_moe")
+    @patch("sglang.srt.server_args.ServerArgs._handle_moe_kernel_config")
+    @patch("sglang.srt.server_args.ServerArgs._handle_context_parallelism")
+    @patch("sglang.srt.server_args.ServerArgs._handle_data_parallelism")
+    @patch("sglang.srt.server_args.ServerArgs._handle_hicache")
+    @patch("sglang.srt.server_args.ServerArgs._handle_grammar_backend")
+    @patch("sglang.srt.server_args.ServerArgs._handle_nccl_pre_warm")
+    @patch("sglang.srt.server_args.ServerArgs._handle_amd_specifics")
+    @patch("sglang.srt.server_args.ServerArgs._handle_page_size")
+    @patch("sglang.srt.server_args.ServerArgs._handle_kv4_compatibility")
+    @patch("sglang.srt.server_args.ServerArgs._handle_linear_attn_backend")
+    @patch("sglang.srt.server_args.ServerArgs._handle_mamba_backend")
+    @patch("sglang.srt.server_args.ServerArgs._handle_attention_backend_compatibility")
+    @patch("sglang.srt.server_args.ServerArgs._handle_sampling_backend")
+    @patch("sglang.srt.server_args.ServerArgs._handle_model_specific_adjustments")
+    @patch("sglang.srt.server_args.ServerArgs._handle_gpu_memory_settings")
+    @patch("sglang.srt.server_args.ServerArgs._handle_piecewise_cuda_graph")
+    @patch("sglang.srt.server_args.get_device_memory_capacity", return_value=1 << 30)
+    def test_prepare_server_args_csd_rebuild_top_freq_ratio(self, *_mocks):
+        server_args = prepare_server_args(
+            [
+                "--model-path",
+                DEFAULT_SMALL_MODEL_NAME_FOR_TEST_QWEN,
+                "--speculative-csd",
+                "--speculative-csd-dynamic-update",
+                "--speculative-csd-rebuild-top-freq-ratio",
+                "0.05",
+            ]
+        )
+        self.assertEqual(server_args.speculative_csd_rebuild_top_freq_ratio, 0.05)
+
+    @patch("sglang.srt.server_args.ServerArgs._handle_other_validations")
+    @patch("sglang.srt.server_args.ServerArgs._handle_debug_utils")
+    @patch("sglang.srt.server_args.ServerArgs._handle_dllm_inference")
+    @patch("sglang.srt.server_args.ServerArgs._handle_deterministic_inference")
+    @patch("sglang.srt.server_args.ServerArgs._handle_cache_compatibility")
+    @patch("sglang.srt.server_args.ServerArgs._handle_environment_variables")
+    @patch("sglang.srt.server_args.ServerArgs._handle_tokenizer_batching")
+    @patch("sglang.srt.server_args.ServerArgs._handle_encoder_disaggregation")
+    @patch("sglang.srt.server_args.ServerArgs._handle_pd_disaggregation")
+    @patch("sglang.srt.server_args.ServerArgs._handle_load_format")
+    @patch("sglang.srt.server_args.ServerArgs._handle_pipeline_parallelism")
+    @patch("sglang.srt.server_args.ServerArgs._handle_elastic_ep")
+    @patch("sglang.srt.server_args.ServerArgs._handle_expert_distribution_metrics")
+    @patch("sglang.srt.server_args.ServerArgs._handle_eplb_and_dispatch")
+    @patch("sglang.srt.server_args.ServerArgs._handle_a2a_moe")
+    @patch("sglang.srt.server_args.ServerArgs._handle_moe_kernel_config")
+    @patch("sglang.srt.server_args.ServerArgs._handle_context_parallelism")
+    @patch("sglang.srt.server_args.ServerArgs._handle_data_parallelism")
+    @patch("sglang.srt.server_args.ServerArgs._handle_hicache")
+    @patch("sglang.srt.server_args.ServerArgs._handle_grammar_backend")
+    @patch("sglang.srt.server_args.ServerArgs._handle_nccl_pre_warm")
+    @patch("sglang.srt.server_args.ServerArgs._handle_amd_specifics")
+    @patch("sglang.srt.server_args.ServerArgs._handle_page_size")
+    @patch("sglang.srt.server_args.ServerArgs._handle_kv4_compatibility")
+    @patch("sglang.srt.server_args.ServerArgs._handle_linear_attn_backend")
+    @patch("sglang.srt.server_args.ServerArgs._handle_mamba_backend")
+    @patch("sglang.srt.server_args.ServerArgs._handle_attention_backend_compatibility")
+    @patch("sglang.srt.server_args.ServerArgs._handle_sampling_backend")
+    @patch("sglang.srt.server_args.ServerArgs._handle_model_specific_adjustments")
+    @patch("sglang.srt.server_args.ServerArgs._handle_gpu_memory_settings")
+    @patch("sglang.srt.server_args.ServerArgs._handle_piecewise_cuda_graph")
+    @patch("sglang.srt.server_args.get_device_memory_capacity", return_value=1 << 30)
+    def test_prepare_server_args_rejects_invalid_csd_rebuild_top_freq_ratio(self, *_mocks):
+        with self.assertRaisesRegex(ValueError, "speculative-csd-rebuild-top-freq-ratio"):
+            prepare_server_args(
+                [
+                    "--model-path",
+                    DEFAULT_SMALL_MODEL_NAME_FOR_TEST_QWEN,
+                    "--speculative-csd",
+                    "--speculative-csd-dynamic-update",
+                    "--speculative-csd-rebuild-top-freq-ratio",
+                    "0",
+                ]
+            )
+
 
 class TestLoadBalanceMethod(unittest.TestCase):
     def test_non_pd_defaults_to_round_robin(self):

@@ -1,11 +1,11 @@
 # CSD 投机解码实验说明
 
-本分支在 SGLang EAGLE speculative decoding 上增加了 CSD 记录和回放能力。核心思路是：record 阶段记录被拒绝 draft token 与目标 token 的替换关系，保存为 CSD table；replay 阶段加载 table，在验证时命中对应 pair 后，再结合 target logits 条件决定是否 force accept draft token。
+本分支在 SGLang EAGLE speculative decoding 上增加了 CSD 记录和回放能力。核心思路是：record 阶段只记录被拒绝 draft token 与目标 token 中满足 target logits 条件的替换关系，保存为 CSD table；replay 阶段加载 table，在验证时命中对应 pair 后，再结合当前 target logits 条件决定是否 force accept draft token。
 
 ## 实现策略
 
 - 每个 EAGLE worker / scheduler / TPModelWorker 持有独立的 `csd_runtime`，不额外增加 TP 同步。
-- record 阶段只向 GPU delta buffer 追加 pair，不在验证热路径里做 Python 回调或重建 hash table。
+- record 阶段只向 GPU delta buffer 追加通过 logits gate 的 pair，不在验证热路径里做 Python 回调或重建 hash table。
 - 保存 table 时通过 `/save_csd_table` flush delta buffer，并在 Python 侧聚合 pair 计数。
 - replay 阶段加载静态 CSD hash table，CUDA 验证逻辑只做 table lookup 和 logits 条件检查。
 - 当前实验主要使用静态 table replay；动态 table 热切换暂未作为外部 API 暴露。
@@ -43,7 +43,7 @@ sglang serve ... \
 
 ### Record
 
-记录 CSD table，不 force accept：
+记录通过 target logits 条件的 CSD pair，不 force accept：
 
 ```bash
 sglang serve ... \

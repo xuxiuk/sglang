@@ -11,7 +11,7 @@ REPO_ROOT=$(cd -- "${SCRIPT_DIR}/../../.." && pwd)
 OUT_DIR=${OUT_DIR:-/home/zhouxuwen/sglang/benchmark/csd/runs/lighteval}
 MODEL_PATH=${MODEL_PATH:-/home/shared/models/Qwen/Qwen3.5-35B-A3B}
 TOKENIZER_PATH=${TOKENIZER_PATH:-${MODEL_PATH}}
-CUDA_DEVICES=${CUDA_DEVICES:-6,7}
+CUDA_DEVICES=${CUDA_DEVICES:-4,5}
 TP_SIZE=${TP_SIZE:-2}
 MEM_FRACTION_STATIC=${MEM_FRACTION_STATIC:-0.85}
 MAX_RUNNING_REQUESTS=${MAX_RUNNING_REQUESTS:-48}
@@ -49,9 +49,8 @@ SPEC_TOPK=${SPEC_TOPK:-3}
 SPEC_DRAFT_TOKENS=${SPEC_DRAFT_TOKENS:-15}
 CSD_FREQ_THRESHOLD=${CSD_FREQ_THRESHOLD:-3}
 CSD_PROB_RATIO=${CSD_PROB_RATIO:-0.3}
-CSD_TABLE_PROB_RATIO=${CSD_TABLE_PROB_RATIO:-1}
+CSD_TABLE_PROB_RATIO=${CSD_TABLE_PROB_RATIO:-0.3}
 CSD_DYNAMIC_UPDATE=${CSD_DYNAMIC_UPDATE:-0}
-CSD_REBUILD_TOP_FREQ_RATIO=${CSD_REBUILD_TOP_FREQ_RATIO:-}
 REDPAJAMA_SAMPLES_PER_DOMAIN=${REDPAJAMA_SAMPLES_PER_DOMAIN:-1000}
 REDPAJAMA_TEMPERATURE=${REDPAJAMA_TEMPERATURE:-1.0}
 REDPAJAMA_SPEC_NUM_STEPS=${REDPAJAMA_SPEC_NUM_STEPS:-3}
@@ -137,7 +136,6 @@ keys = [
     "CSD_FREQ_THRESHOLD",
     "CSD_PROB_RATIO",
     "CSD_DYNAMIC_UPDATE",
-    "CSD_REBUILD_TOP_FREQ_RATIO",
     "REDPAJAMA_SAMPLES_PER_DOMAIN",
     "REDPAJAMA_TEMPERATURE",
     "REDPAJAMA_SPEC_NUM_STEPS",
@@ -256,9 +254,6 @@ run_lighteval_task() {
     if [[ "${CSD_DYNAMIC_UPDATE}" == "1" ]]; then
       extra_args+=(--csd-dynamic-update)
     fi
-    if [[ -n "${CSD_REBUILD_TOP_FREQ_RATIO}" ]]; then
-      extra_args+=(--csd-rebuild-top-freq-ratio "${CSD_REBUILD_TOP_FREQ_RATIO}")
-    fi
   fi
 
   GEN_KWARGS="${gen_kwargs}" \
@@ -298,9 +293,6 @@ run_lighteval_task() {
 suite_run_id() {
   local value
   value="tasks$(printf '%s' "${TASKS}" | tr ' ' '-')_steps${SPEC_NUM_STEPS}_topk${SPEC_TOPK}_draft${SPEC_DRAFT_TOKENS}_freq${CSD_FREQ_THRESHOLD}_ratio${CSD_PROB_RATIO}"
-  if [[ -n "${CSD_REBUILD_TOP_FREQ_RATIO}" ]]; then
-    value="${value}_topfreq${CSD_REBUILD_TOP_FREQ_RATIO}"
-  fi
   if [[ -n "${RUN_VARIANT}" ]]; then
     value="${value}_${RUN_VARIANT}"
   fi
@@ -371,9 +363,6 @@ apply_suite_overrides() {
       dynamic|dynamic_update|csd_dynamic_update)
         CSD_DYNAMIC_UPDATE=$(normalize_bool "${value}")
         ;;
-      rebuild_top_freq_ratio|top_freq_ratio|topfreq|csd_rebuild_top_freq_ratio)
-        CSD_REBUILD_TOP_FREQ_RATIO="${value}"
-        ;;
       *)
         echo "Unknown suite override: ${key}" >&2
         return 1
@@ -402,7 +391,6 @@ run_lighteval_suite() {
   local old_csd_freq_threshold="${CSD_FREQ_THRESHOLD}"
   local old_csd_prob_ratio="${CSD_PROB_RATIO}"
   local old_csd_dynamic_update="${CSD_DYNAMIC_UPDATE}"
-  local old_csd_rebuild_top_freq_ratio="${CSD_REBUILD_TOP_FREQ_RATIO}"
 
   if ! apply_suite_overrides "$@"; then
     TASKS="${old_tasks}"
@@ -416,7 +404,6 @@ run_lighteval_suite() {
     CSD_FREQ_THRESHOLD="${old_csd_freq_threshold}"
     CSD_PROB_RATIO="${old_csd_prob_ratio}"
     CSD_DYNAMIC_UPDATE="${old_csd_dynamic_update}"
-    CSD_REBUILD_TOP_FREQ_RATIO="${old_csd_rebuild_top_freq_ratio}"
     return 1
   fi
 
@@ -448,7 +435,6 @@ run_lighteval_suite() {
   CSD_FREQ_THRESHOLD="${old_csd_freq_threshold}"
   CSD_PROB_RATIO="${old_csd_prob_ratio}"
   CSD_DYNAMIC_UPDATE="${old_csd_dynamic_update}"
-  CSD_REBUILD_TOP_FREQ_RATIO="${old_csd_rebuild_top_freq_ratio}"
   return "${status}"
 }
 
@@ -467,8 +453,8 @@ fi
 # TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp1 GEN_KWARGS="temperature=0.6,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=0.0,repetition_penalty=1.0" run_lighteval_suite "csd" auto ratio=0.3 steps=5 topk=1 draft=5
 # TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp1 GEN_KWARGS="temperature=0.6,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=0.0,repetition_penalty=1.0" run_lighteval_suite "csd" auto dynamic_update=1 ratio=0.3 steps=5 topk=1 draft=5
 
-run_lighteval_suite "csd" auto ratio=1 steps=5 topk=3 draft=15
-run_lighteval_suite "csd" auto dynamic_update=1 ratio=1 steps=5 topk=3 draft=15
+run_lighteval_suite "csd" auto ratio=0.3 steps=5 topk=3 draft=15
+run_lighteval_suite "csd" auto dynamic_update=1 ratio=0.3 steps=5 topk=3 draft=15
 
 # TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp0 GEN_KWARGS="temperature=0.0" run_lighteval_suite "baseline" auto
 # TASKS="lcb:codegeneration_v6" LIGHTEVAL_SAVE_DETAILS=1 RUN_VARIANT=temp0 GEN_KWARGS="temperature=0.0" run_lighteval_suite "vanilla" auto steps=5 topk=3 draft=15

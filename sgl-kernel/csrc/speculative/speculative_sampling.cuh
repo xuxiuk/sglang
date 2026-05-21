@@ -266,61 +266,41 @@ __global__ void TreeSpeculativeSamplingTargetOnly(
 
         if constexpr (CSD_ENABLED || CSD_DYNAMIC_UPDATE) {
           DType max_target_logit = 0;
-          DType target_logit_single = 0;
-          if constexpr (CSD_ENABLED) {
-            target_logit_single = target_logits[cur_prob_offset + draft_token_id];
-            resampled_token_id = CsdSampleResidualTokenAndMaxLogit<
-                BLOCK_THREADS,
-                SCAN_ALGORITHM,
-                REDUCE_ALGORITHM,
-                VEC_SIZE,
-                DETERMINISTIC,
-                true,
-                DType,
-                IdType2>(
-                target_probs,
-                draft_probs,
-                target_logits,
-                cur_prob_offset,
-                d,
-                uniform_samples_for_final_sampling[bx],
-                true,
-                temp_storage,
-                &max_target_logit);
-          } else {
-            resampled_token_id = CsdSampleResidualTokenAndMaxLogit<
-                BLOCK_THREADS,
-                SCAN_ALGORITHM,
-                REDUCE_ALGORITHM,
-                VEC_SIZE,
-                DETERMINISTIC,
-                false,
-                DType,
-                IdType2>(
-                target_probs,
-                draft_probs,
-                target_logits,
-                cur_prob_offset,
-                d,
-                uniform_samples_for_final_sampling[bx],
-                true,
-                temp_storage,
-                &max_target_logit);
-          }
+          DType target_logit_single = target_logits[cur_prob_offset + draft_token_id];
+          resampled_token_id = CsdSampleResidualTokenAndMaxLogit<
+              BLOCK_THREADS,
+              SCAN_ALGORITHM,
+              REDUCE_ALGORITHM,
+              VEC_SIZE,
+              DETERMINISTIC,
+              true,
+              DType,
+              IdType2>(
+              target_probs,
+              draft_probs,
+              target_logits,
+              cur_prob_offset,
+              d,
+              uniform_samples_for_final_sampling[bx],
+              true,
+              temp_storage,
+              &max_target_logit);
           has_resampled_token = true;
 
           if (tx == 0) {
             int64_t csd_pair_key = CsdPackPair(draft_token_id, resampled_token_id);
             bool table_hit = CSD_ENABLED &&
                              CsdHashContains(csd_table_keys, csd_table_capacity, csd_table_max_probe, csd_pair_key);
+            bool csd_logit_pass = target_logit_single >= max_target_logit + csd_logit_margin;
             if constexpr (CSD_DYNAMIC_UPDATE) {
-              CsdAppendDelta(csd_delta_pairs, csd_delta_counter, csd_delta_pair_ct, csd_delta_capacity, csd_pair_key);
+              if (csd_logit_pass) {
+                CsdAppendDelta(csd_delta_pairs, csd_delta_counter, csd_delta_pair_ct, csd_delta_capacity, csd_pair_key);
+              }
             }
             if (table_hit) {
               CsdAtomicAddI64(csd_lookup_hit_ct, 1ULL);
             }
-            csd_force_accept = table_hit && target_logit_single >= max_target_logit + csd_logit_margin &&
-                               !csd_force_accept_disabled;
+            csd_force_accept = table_hit && csd_logit_pass && !csd_force_accept_disabled;
             if (csd_force_accept) {
               CsdAtomicAddI64(csd_forced_accept_ct, 1ULL);
             }

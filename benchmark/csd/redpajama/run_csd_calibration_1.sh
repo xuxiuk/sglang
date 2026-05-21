@@ -8,29 +8,28 @@ set -euo pipefail
 
 export HF_ENDPOINT=https://hf-mirror.com
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-REPO_ROOT=$(cd -- "${SCRIPT_DIR}/../.." && pwd)
+REPO_ROOT=$(cd -- "${SCRIPT_DIR}/../../.." && pwd)
 
-OUT_DIR=${OUT_DIR:-/home/zhouxuwen/sglang/benchmark/redpajama/csd_runs}
+OUT_DIR=${OUT_DIR:-/home/zhouxuwen/sglang/benchmark/csd/runs/redpajama}
 MODEL_PATH=${MODEL_PATH:-/home/shared/models/Qwen/Qwen3.5-35B-A3B}
 HOST=${HOST:-127.0.0.1}
-PORT=${PORT:-30002}
-CUDA_DEVICES=${CUDA_DEVICES:-4,5}
+PORT=${PORT:-30004}
+CUDA_DEVICES=${CUDA_DEVICES:-6,7}
 TP_SIZE=${TP_SIZE:-2}
 SAMPLES_PER_DOMAIN=${SAMPLES_PER_DOMAIN:-1000}
 PARALLEL=${PARALLEL:-8}
 MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-512}
 TEMPERATURE=${TEMPERATURE:-1.0}
 TOP_P=${TOP_P:-1.0}
-SPEC_NUM_STEPS=${SPEC_NUM_STEPS:-5}
-SPEC_TOPK=${SPEC_TOPK:-3}
-SPEC_DRAFT_TOKENS=${SPEC_DRAFT_TOKENS:-15}
+SPEC_NUM_STEPS=${SPEC_NUM_STEPS:-3}
+SPEC_TOPK=${SPEC_TOPK:-1}
+SPEC_DRAFT_TOKENS=${SPEC_DRAFT_TOKENS:-3}
 CSD_FREQ_THRESHOLD=${CSD_FREQ_THRESHOLD:-3}
-CSD_PROB_RATIO=${CSD_PROB_RATIO:-0.01}
+CSD_PROB_RATIO=${CSD_PROB_RATIO:-1}
 CSD_DELTA_CAPACITY=${CSD_DELTA_CAPACITY:-16777216}
-DRAFT_MODEL_NAME=${DRAFT_MODEL_NAME:-mtp}
 MEM_FRACTION_STATIC=${MEM_FRACTION_STATIC:-0.85}
 WATCHDOG_TIMEOUT=${WATCHDOG_TIMEOUT:-3000}
-SGLANG_TORCH_PROFILER_DIR=${SGLANG_TORCH_PROFILER_DIR:-/home/zhouxuwen/sglang/profiles}
+SGLANG_TORCH_PROFILER_DIR=${SGLANG_TORCH_PROFILER_DIR:-/home/zhouxuwen/sglang/benchmark/csd/runs/profiles}
 DATASET_NAME=${DATASET_NAME:-togethercomputer/RedPajama-Data-1T}
 DOMAINS=${DOMAINS:-"arxiv c4 common_crawl github stackexchange wikipedia"}
 PROMPT_CHARS=${PROMPT_CHARS:-4096}
@@ -51,9 +50,13 @@ safe_filename_part() {
   fi
   printf '%s' "${value}"
 }
+
 MODEL_NAME_PART=$(safe_filename_part "${MODEL_PATH}")
+DRAFT_MODEL_NAME=${DRAFT_MODEL_NAME:-mtp}
 DRAFT_MODEL_NAME_PART=$(safe_filename_part "${DRAFT_MODEL_NAME}")
-CSD_TABLE_PATH=${CSD_TABLE_PATH:-"${OUT_DIR}/csd_table_redpajama_logits_gated_6domains_n${SAMPLES_PER_DOMAIN}_${MODEL_NAME_PART}_${DRAFT_MODEL_NAME_PART}_EAGLE_temp${TEMPERATURE}_ratio${CSD_PROB_RATIO}.json"}
+SPEC_ALGORITHM_PART=$(safe_filename_part "EAGLE")
+SPEC_SHAPE_PART="steps${SPEC_NUM_STEPS}_topk${SPEC_TOPK}_draft${SPEC_DRAFT_TOKENS}"
+CSD_TABLE_PATH=${CSD_TABLE_PATH:-"${OUT_DIR}/csd_table_redpajama_logits_gated_6domains_n${SAMPLES_PER_DOMAIN}_${MODEL_NAME_PART}_${DRAFT_MODEL_NAME_PART}_${SPEC_ALGORITHM_PART}_${SPEC_SHAPE_PART}_temp${TEMPERATURE}_ratio${CSD_PROB_RATIO}.json"}
 
 SERVER_PID=""
 SERVER_PGID=""
@@ -173,7 +176,7 @@ trap cleanup_server EXIT
 run_id="redpajama_temp${TEMPERATURE}_6domains_n${SAMPLES_PER_DOMAIN}"
 start_record_server "${run_id}"
 
-python benchmark/redpajama/bench_redpajama_csd.py \
+python benchmark/csd/redpajama/bench_redpajama_csd.py \
   --dataset-name "${DATASET_NAME}" \
   --domains ${DOMAINS} \
   --samples-per-domain "${SAMPLES_PER_DOMAIN}" \

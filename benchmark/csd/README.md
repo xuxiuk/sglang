@@ -8,9 +8,9 @@
 
 核心思路是：
 
-- record / calibration 阶段：记录被拒绝的 draft token 与 target token 的替换关系，保存为 CSD table。
-- replay 阶段：加载 CSD table，在验证时如果命中 `(draft_token, target_token)` pair，再结合 target logits 条件决定是否 force accept draft token。
-- online update 阶段：在 replay 的同时继续收集新的 rejected pair，达到阈值后异步重建 CSD hash table，并在下一次 verify 边界切换到新表。
+- record / calibration 阶段：只记录被拒绝的 draft token 与 target token 中满足 target logits 条件的替换关系，保存为 CSD table。
+- replay 阶段：加载 CSD table，在验证时如果命中 `(draft_token, target_token)` pair，再结合当前 target logits 条件决定是否 force accept draft token。
+- online update 阶段：在 replay 的同时继续收集满足 logits gate 的新 rejected pair，达到阈值后异步重建 CSD hash table，并在下一次 verify 边界切换到新表。
 
 这个目录主要服务于几类实验：
 
@@ -88,7 +88,7 @@ benchmark/csd/runs/profiles/       # profiler 输出
 
 CSD 在 verify kernel 中完成：
 
-- 对 rejected draft pair 执行 delta append。
+- 对通过 logits gate 的 rejected draft pair 执行 delta append。
 - 对 CSD table 做 hash lookup。
 - table 命中后检查 logits 条件。
 - 满足条件时 force accept draft token。
@@ -137,7 +137,7 @@ CSD 在 verify kernel 中完成：
   - replay / online update 模式加载的 CSD table 路径。
 
 - `--speculative-csd-dynamic-update`
-  - 开启 rejected pair 记录。
+  - 开启 rejected pair 记录；只有满足 logits gate 的 pair 会进入 delta buffer。
   - record 模式用它生成 table。
   - online update 模式用它在 replay 时继续收集新 pair。
 
@@ -199,7 +199,7 @@ sglang serve ... \
 
 ### 3. Record / calibration
 
-记录 rejected pair，不 force accept：
+记录通过 target logits 条件的 rejected pair，不 force accept：
 
 ```bash
 sglang serve ... \

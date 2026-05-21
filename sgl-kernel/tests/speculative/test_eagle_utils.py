@@ -125,12 +125,13 @@ def test_verify_tree_greedy():
         "expected_accept_token_num",
         "expected_lookup_hit_ct",
         "expected_forced_accept_ct",
+        "expected_delta_pair_ct",
     ),
     [
-        (True, 9.5, False, [3, 2, -1], [[0, 1, -1]], [1], 1, 1),
-        (True, 3.0, False, [2, -1, -1], [[0, -1, -1]], [0], 1, 0),
-        (True, 9.5, True, [2, -1, -1], [[0, -1, -1]], [0], 1, 0),
-        (False, 9.5, False, [2, -1, -1], [[0, -1, -1]], [0], 0, 0),
+        (True, 9.5, False, [3, 2, -1], [[0, 1, -1]], [1], 1, 1, 1),
+        (True, 3.0, False, [2, -1, -1], [[0, -1, -1]], [0], 1, 0, 0),
+        (True, 9.5, True, [2, -1, -1], [[0, -1, -1]], [0], 1, 0, 1),
+        (False, 9.5, False, [2, -1, -1], [[0, -1, -1]], [0], 0, 0, 1),
     ],
 )
 def test_verify_tree_greedy_csd(
@@ -142,6 +143,7 @@ def test_verify_tree_greedy_csd(
     expected_accept_token_num,
     expected_lookup_hit_ct,
     expected_forced_accept_ct,
+    expected_delta_pair_ct,
 ):
     candidates = torch.tensor([[0, 3, 4]], dtype=torch.int64, device="cuda")
     retrive_index = torch.tensor([[0, 1, 2]], dtype=torch.int64, device="cuda")
@@ -198,9 +200,10 @@ def test_verify_tree_greedy_csd(
     assert accept_token_num.tolist() == expected_accept_token_num
     assert csd_lookup_hit_ct.item() == expected_lookup_hit_ct
     assert csd_forced_accept_ct.item() == expected_forced_accept_ct
-    assert csd_delta_pair_ct.item() == 1
-    assert csd_delta_counter.item() == 1
-    assert csd_delta_pairs[:1].tolist() == [pair_key]
+    assert csd_delta_pair_ct.item() == expected_delta_pair_ct
+    assert csd_delta_counter.item() == expected_delta_pair_ct
+    if expected_delta_pair_ct:
+        assert csd_delta_pairs[:1].tolist() == [pair_key]
 
 
 if __name__ == "__main__":

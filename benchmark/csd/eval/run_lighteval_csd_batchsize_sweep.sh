@@ -37,17 +37,18 @@ LIGHTEVAL_OVERRIDE_CHAT_TEMPLATE=${LIGHTEVAL_OVERRIDE_CHAT_TEMPLATE:-auto}
 LIGHTEVAL_REMOVE_REASONING_TAGS=${LIGHTEVAL_REMOVE_REASONING_TAGS:-1}
 LIGHTEVAL_REASONING_TAGS="${LIGHTEVAL_REASONING_TAGS:-[('<think>', '</think>')]}"
 
-# THINK_TASKS=${THINK_TASKS:-"aime25 lcb:codegeneration_v6 minerva_math500"}
 THINK_TASKS=${THINK_TASKS:-"aime25"}
+CODING_TASKS=${CODING_TASKS:-"lcb:codegeneration_v6"}
 NO_THINK_TASKS=${NO_THINK_TASKS:-"gsm8k"}
 TASKS=${TASKS:-"${NO_THINK_TASKS} ${THINK_TASKS}"}
 NUM_FEWSHOT=${NUM_FEWSHOT:-0}
 LIMIT=${LIMIT:-}
-MAX_GEN_TOKS=${MAX_GEN_TOKS:-64000}
+MAX_GEN_TOKS=${MAX_GEN_TOKS:-81920}
 MAX_LENGTH=${MAX_LENGTH:-96000}
 GEN_KWARGS=${GEN_KWARGS:-}
 THINK_GEN_KWARGS=${THINK_GEN_KWARGS:-temperature=1.0,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=1.5,repetition_penalty=1.0}
-NO_THINK_GEN_KWARGS=${NO_THINK_GEN_KWARGS:-temperature=0.0}
+CODING_GEN_KWARGS=${CODING_GEN_KWARGS:-temperature=0.6,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=0.0,repetition_penalty=1.0}
+NO_THINK_GEN_KWARGS=${NO_THINK_GEN_KWARGS:-temperature=1.0,top_p=1.0,top_k=40,min_p=0.0,presence_penalty=2.0,repetition_penalty=1.0}
 
 SPEC_SHAPE_NAME=${SPEC_SHAPE_NAME:-default}
 SPEC_NUM_STEPS=${SPEC_NUM_STEPS:-5}
@@ -63,7 +64,7 @@ REDPAJAMA_MODEL_NAME_PART=${MODEL_PATH%/}
 REDPAJAMA_MODEL_NAME_PART=${REDPAJAMA_MODEL_NAME_PART##*/}
 REDPAJAMA_MODEL_NAME_PART=$(printf '%s' "${REDPAJAMA_MODEL_NAME_PART}" | tr -c 'A-Za-z0-9._-' '-')
 REDPAJAMA_DRAFT_MODEL_NAME_PART=$(printf '%s' "${REDPAJAMA_DRAFT_MODEL_NAME}" | tr -c 'A-Za-z0-9._-' '-')
-CSD_TABLE_PATH=${CSD_TABLE_PATH:-/home/zhouxuwen/sglang/benchmark/csd/runs/redpajama/csd_table_redpajama_6domains_n${REDPAJAMA_SAMPLES_PER_DOMAIN}_${REDPAJAMA_MODEL_NAME_PART}_${REDPAJAMA_DRAFT_MODEL_NAME_PART}_EAGLE_temp${REDPAJAMA_TEMPERATURE}.json}
+CSD_TABLE_PATH=${CSD_TABLE_PATH:-/home/zhouxuwen/sglang/benchmark/csd/runs/redpajama/csd_table_redpajama_logits_gated_6domains_n${REDPAJAMA_SAMPLES_PER_DOMAIN}_${REDPAJAMA_MODEL_NAME_PART}_${REDPAJAMA_DRAFT_MODEL_NAME_PART}_EAGLE_temp${REDPAJAMA_TEMPERATURE}_ratio${CSD_PROB_RATIO}.json}
 
 ARTIFACT_DIR=${ARTIFACT_DIR:-"${OUT_DIR}/artifacts"}
 RESULT_DIR=${RESULT_DIR:-"${OUT_DIR}/results"}
@@ -126,12 +127,16 @@ keys = [
     "LIGHTEVAL_REASONING_TAGS",
     "TASKS",
     "THINK_TASKS",
+    "CODING_TASKS",
     "NO_THINK_TASKS",
     "NUM_FEWSHOT",
     "LIMIT",
     "MAX_GEN_TOKS",
     "MAX_LENGTH",
     "GEN_KWARGS",
+    "THINK_GEN_KWARGS",
+    "CODING_GEN_KWARGS",
+    "NO_THINK_GEN_KWARGS",
     "SPEC_SHAPE_NAME",
     "SPEC_NUM_STEPS",
     "SPEC_TOPK",
@@ -154,6 +159,17 @@ task_uses_thinking() {
   local task="$1"
   local item
   for item in ${THINK_TASKS}; do
+    if [[ "${item}" == "${task}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+task_uses_coding() {
+  local task="$1"
+  local item
+  for item in ${CODING_TASKS}; do
     if [[ "${item}" == "${task}" ]]; then
       return 0
     fi
@@ -204,6 +220,8 @@ run_lighteval_task() {
   local gen_kwargs
   if [[ -n "${GEN_KWARGS}" ]]; then
     gen_kwargs="${GEN_KWARGS}"
+  elif task_uses_coding "${task}"; then
+    gen_kwargs="${CODING_GEN_KWARGS}"
   elif task_uses_thinking "${task}"; then
     gen_kwargs="${THINK_GEN_KWARGS}"
   else

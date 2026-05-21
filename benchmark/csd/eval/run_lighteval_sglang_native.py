@@ -73,6 +73,7 @@ def parse_args():
     parser.add_argument("--attention-backend", default=None)
     parser.add_argument("--chunked-prefill-size", type=int, default=4096)
     parser.add_argument("--override-chat-template", choices=("true", "false", "auto"), default="auto")
+    parser.add_argument("--enable-thinking", choices=("true", "false", "auto"), default="auto")
     parser.add_argument("--system-prompt", default=None)
     parser.add_argument("--gen-kwargs", default=None)
     parser.add_argument("--save-details", action="store_true")
@@ -92,6 +93,7 @@ def parse_args():
     parser.add_argument("--csd-save-table-path", default=None)
     parser.add_argument("--csd-freq-threshold", type=int, default=None)
     parser.add_argument("--csd-prob-ratio", type=float, default=None)
+    parser.add_argument("--csd-rebuild-top-freq-ratio", type=float, default=None)
     parser.add_argument("--csd-dynamic-update", action="store_true")
     parser.add_argument("--csd-force-accept-disabled", action="store_true")
     parser.add_argument("--csd-enabled", action="store_true")
@@ -134,6 +136,8 @@ def _parse_gen_kwargs(gen_kwargs):
 
 
 def _run_config(args):
+    gen_params = _parse_gen_kwargs(args.gen_kwargs)
+    gen_params["max_new_tokens"] = args.max_gen_toks
     return {
         "run_tag": args.run_tag,
         "mode": args.mode,
@@ -151,10 +155,14 @@ def _run_config(args):
         "log_level": args.log_level,
         "tasks": [task.strip() for task in args.tasks.split(",") if task.strip()],
         "limit": args.limit,
+        "gen_kwargs": args.gen_kwargs,
+        "generation_parameters": gen_params,
+        "temperature": gen_params.get("temperature"),
         "max_gen_toks": args.max_gen_toks,
         "max_length": args.max_length,
+        "override_chat_template": args.override_chat_template,
+        "enable_thinking": args.enable_thinking,
         "trust_remote_code": args.trust_remote_code,
-        "gen_kwargs": args.gen_kwargs,
         "disable_sample_cache": args.disable_sample_cache,
         "eval_framework": "lighteval",
         "speculative": {
@@ -169,6 +177,7 @@ def _run_config(args):
             "save_table_path": args.csd_save_table_path,
             "freq_threshold": args.csd_freq_threshold,
             "prob_ratio": args.csd_prob_ratio,
+            "rebuild_top_freq_ratio": args.csd_rebuild_top_freq_ratio,
             "dynamic_update": args.csd_dynamic_update,
             "force_accept_disabled": args.csd_force_accept_disabled,
         },
@@ -188,6 +197,7 @@ def _server_config(args):
         "speculative_csd_save_table_path": args.csd_save_table_path,
         "speculative_csd_freq_threshold": args.csd_freq_threshold,
         "speculative_csd_prob_ratio": args.csd_prob_ratio,
+        "speculative_csd_rebuild_top_freq_ratio": args.csd_rebuild_top_freq_ratio,
         "tp_size": args.tensor_parallel_size,
         "dp_size": args.data_parallel_size,
         "mem_fraction_static": args.mem_fraction_static,
@@ -268,6 +278,8 @@ def _compact_result_rows(results, args):
     server_config = results["sglang"].get("server_config") or {}
     csd_enabled = server_config.get("speculative_csd_enabled")
     csd_config = {**run_config["csd"], "enabled": csd_enabled}
+    generation_parameters = _parse_gen_kwargs(args.gen_kwargs)
+    generation_parameters["max_new_tokens"] = args.max_gen_toks
     rows = []
     for task_name in run_config["tasks"]:
         metrics = _task_metrics(results, task_name)
@@ -277,6 +289,10 @@ def _compact_result_rows(results, args):
             "backend": "srt",
             "eval_framework": "lighteval",
             "num_gpus": args.tensor_parallel_size,
+            "gen_kwargs": args.gen_kwargs,
+            "generation_parameters": generation_parameters,
+            "enable_thinking": args.enable_thinking,
+            "temperature": generation_parameters.get("temperature"),
             "latency": performance.get("elapsed_sec"),
             "accuracy": round(score_value, 6) if isinstance(score_value, float) else score_value,
             "invalid": None,
@@ -303,6 +319,10 @@ def _compact_result_rows(results, args):
                 "metrics": metrics,
                 "limit": args.limit,
                 "max_running_requests": args.max_running_requests,
+                "gen_kwargs": args.gen_kwargs,
+                "generation_parameters": generation_parameters,
+                "enable_thinking": args.enable_thinking,
+                "temperature": generation_parameters.get("temperature"),
                 "max_gen_toks": args.max_gen_toks,
                 "max_length": args.max_length,
                 "avg_prompt_tokens": avg_prompt_tokens,
@@ -332,6 +352,12 @@ def _override_chat_template(value):
     return value == "true"
 
 
+def _chat_template_kwargs(value):
+    if value == "auto":
+        return None
+    return {"enable_thinking": value == "true"}
+
+
 def _build_model_config(args):
     gen_params = _parse_gen_kwargs(args.gen_kwargs)
     gen_params["max_new_tokens"] = args.max_gen_toks
@@ -357,6 +383,7 @@ def _build_model_config(args):
         mamba_scheduler_strategy=args.mamba_scheduler_strategy,
         log_level=args.log_level,
         override_chat_template=_override_chat_template(args.override_chat_template),
+        chat_template_kwargs=_chat_template_kwargs(args.enable_thinking),
         system_prompt=args.system_prompt,
         generation_parameters=generation_parameters,
         use_sample_cache=not args.disable_sample_cache,
@@ -368,6 +395,7 @@ def _build_model_config(args):
         speculative_csd_table_path=args.csd_table_path if args.csd_enabled else None,
         speculative_csd_freq_threshold=args.csd_freq_threshold if args.csd_enabled else None,
         speculative_csd_prob_ratio=args.csd_prob_ratio if args.csd_enabled else None,
+        speculative_csd_rebuild_top_freq_ratio=args.csd_rebuild_top_freq_ratio if args.csd_enabled else None,
         speculative_csd_dynamic_update=args.csd_dynamic_update,
         speculative_csd_force_accept_disabled=args.csd_force_accept_disabled,
         speculative_csd_save_table_path=args.csd_save_table_path,

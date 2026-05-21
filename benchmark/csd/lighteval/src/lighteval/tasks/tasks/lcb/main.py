@@ -78,34 +78,28 @@ def lcb_codegeneration_prompt_fn(line, task_name: str = "lcb:codegeneration") ->
 
 class CodegenMetric(SampleLevelComputation):
     def compute(self, model_response: ModelResponse, doc: Doc, **kwargs) -> dict:
-        """Estimates the Pass@1 metric for the code generation task.
-        Extract the code from each prediction, Runs it for each sample and generations,
-        and computes the Pass@1 over the outputs.
-        """
         assert doc.specific is not None, "Doc specific field is required for codegen_metric"
 
         predictions = model_response.final_text
-        # Extract generated code snippets
-        generated_code_snippets = [[extract_code(pred) for pred in predictions]]  # noqa: F841
-        evaluation_sample = {  # noqa: F841
+        generated_code_snippets = [[extract_code(pred) for pred in predictions]]
+        evaluation_sample = {
             "inputs": doc.specific["inputs"],
             "outputs": doc.specific["outputs"],
             "fn_name": doc.specific["fn_name"],
         }
-        # This is a list of lists because
         evaluation_sample = [{"input_output": json.dumps(evaluation_sample)}]
 
-        metrics, _ = codegen_metrics(
+        _, results = codegen_metrics(
             evaluation_sample,
             generated_code_snippets,
-            k_list=[1],  # Only run for Pass@1
+            k_list=[1],
             num_process_evaluate=8,
         )
-        return metrics["pass@1"]
+        return np.mean([np.all(np.array(generation) > 0) for generation in results[0]])
 
 
 lcb_codegen_metric = SampleLevelMetric(
-    metric_name="codegen_pass@1:16",  # This is the way of informing the number of generations currently
+    metric_name="codegen_avg@16",
     category=SamplingMethod.GENERATIVE,
     higher_is_better=True,
     sample_level_fn=CodegenMetric(),

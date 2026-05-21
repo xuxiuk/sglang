@@ -844,6 +844,7 @@ class EAGLEWorkerV2(BaseSpecWorker):
         self.csd_runtime.maybe_start_async_rebuild(
             freq_threshold=self.server_args.speculative_csd_freq_threshold,
             rebuild_threshold=self.server_args.speculative_csd_rebuild_threshold,
+            top_freq_ratio=self.server_args.speculative_csd_rebuild_top_freq_ratio,
         )
         new_seq_lens = batch.seq_lens + accept_length
 
