@@ -407,6 +407,7 @@ class CSDRuntime:
     enabled: bool
     dynamic_update: bool
     force_accept_disabled: bool
+    dynamic_update_ignore_prob_ratio: bool
     table: CSDHashTable
     metrics: CSDMetrics
     delta_buffer: Optional[CSDDeltaBuffer] = None
@@ -431,6 +432,7 @@ class CSDRuntime:
                 enabled=False,
                 dynamic_update=False,
                 force_accept_disabled=False,
+                dynamic_update_ignore_prob_ratio=False,
                 table=CSDHashTable.empty(device=device, max_probe=max_probe),
                 metrics=metrics,
             )
@@ -456,6 +458,7 @@ class CSDRuntime:
             enabled=True,
             dynamic_update=server_args.speculative_csd_dynamic_update,
             force_accept_disabled=server_args.speculative_csd_force_accept_disabled,
+            dynamic_update_ignore_prob_ratio=server_args.speculative_csd_dynamic_update_ignore_prob_ratio,
             table=table,
             metrics=metrics,
             delta_buffer=delta_buffer,

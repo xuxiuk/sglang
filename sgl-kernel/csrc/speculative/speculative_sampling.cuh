@@ -230,6 +230,7 @@ __global__ void TreeSpeculativeSamplingTargetOnly(
     uint32_t csd_delta_capacity,
     bool csd_enabled,
     bool csd_dynamic_update,
+    bool csd_dynamic_update_ignore_prob_ratio,
     bool csd_force_accept_disabled,
     DType csd_logit_margin) {
   const uint32_t bx = blockIdx.x, tx = threadIdx.x;
@@ -293,7 +294,7 @@ __global__ void TreeSpeculativeSamplingTargetOnly(
                              CsdHashContains(csd_table_keys, csd_table_capacity, csd_table_max_probe, csd_pair_key);
             bool csd_logit_pass = target_logit_single >= max_target_logit + csd_logit_margin;
             if constexpr (CSD_DYNAMIC_UPDATE) {
-              if (csd_logit_pass) {
+              if (csd_dynamic_update_ignore_prob_ratio || csd_logit_pass) {
                 CsdAppendDelta(csd_delta_pairs, csd_delta_counter, csd_delta_pair_ct, csd_delta_capacity, csd_pair_key);
               }
             }
@@ -394,6 +395,7 @@ cudaError_t LaunchTreeSpeculativeSamplingTargetOnly(
     uint32_t csd_delta_capacity,
     bool csd_enabled,
     bool csd_dynamic_update,
+    bool csd_dynamic_update_ignore_prob_ratio,
     bool csd_force_accept_disabled,
     DType csd_logit_margin,
     cudaStream_t stream) {
@@ -432,6 +434,7 @@ cudaError_t LaunchTreeSpeculativeSamplingTargetOnly(
       &csd_delta_capacity,
       &csd_enabled,
       &csd_dynamic_update,
+      &csd_dynamic_update_ignore_prob_ratio,
       &csd_force_accept_disabled,
       &csd_logit_margin};
   DISPATCH_ALIGNED_VEC_SIZE(
@@ -485,6 +488,7 @@ cudaError_t TreeSpeculativeSamplingTargetOnly(
     uint32_t csd_delta_capacity = 0,
     bool csd_enabled = false,
     bool csd_dynamic_update = false,
+    bool csd_dynamic_update_ignore_prob_ratio = false,
     bool csd_force_accept_disabled = false,
     DType csd_logit_margin = -4.605170185988091f,
     cudaStream_t stream = 0) {
@@ -520,6 +524,7 @@ cudaError_t TreeSpeculativeSamplingTargetOnly(
         csd_delta_capacity,
         csd_enabled,
         csd_dynamic_update,
+        csd_dynamic_update_ignore_prob_ratio,
         csd_force_accept_disabled,
         csd_logit_margin,
         stream);
@@ -556,6 +561,7 @@ cudaError_t TreeSpeculativeSamplingTargetOnly(
         csd_delta_capacity,
         csd_enabled,
         csd_dynamic_update,
+        csd_dynamic_update_ignore_prob_ratio,
         csd_force_accept_disabled,
         csd_logit_margin,
         stream);
@@ -592,6 +598,7 @@ cudaError_t TreeSpeculativeSamplingTargetOnly(
         csd_delta_capacity,
         csd_enabled,
         csd_dynamic_update,
+        csd_dynamic_update_ignore_prob_ratio,
         csd_force_accept_disabled,
         csd_logit_margin,
         stream);
@@ -627,6 +634,7 @@ cudaError_t TreeSpeculativeSamplingTargetOnly(
       csd_delta_capacity,
       csd_enabled,
       csd_dynamic_update,
+      csd_dynamic_update_ignore_prob_ratio,
       csd_force_accept_disabled,
       csd_logit_margin,
       stream);

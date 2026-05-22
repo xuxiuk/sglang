@@ -120,6 +120,7 @@ def test_verify_tree_greedy():
         "has_table_entry",
         "draft_logit",
         "force_accept_disabled",
+        "ignore_prob_ratio",
         "expected_predicts",
         "expected_accept_index",
         "expected_accept_token_num",
@@ -128,16 +129,18 @@ def test_verify_tree_greedy():
         "expected_delta_pair_ct",
     ),
     [
-        (True, 9.5, False, [3, 2, -1], [[0, 1, -1]], [1], 1, 1, 1),
-        (True, 3.0, False, [2, -1, -1], [[0, -1, -1]], [0], 1, 0, 0),
-        (True, 9.5, True, [2, -1, -1], [[0, -1, -1]], [0], 1, 0, 1),
-        (False, 9.5, False, [2, -1, -1], [[0, -1, -1]], [0], 0, 0, 1),
+        (True, 9.5, False, False, [3, 2, -1], [[0, 1, -1]], [1], 1, 1, 1),
+        (True, 3.0, False, False, [2, -1, -1], [[0, -1, -1]], [0], 1, 0, 0),
+        (True, 3.0, False, True, [2, -1, -1], [[0, -1, -1]], [0], 1, 0, 1),
+        (True, 9.5, True, False, [2, -1, -1], [[0, -1, -1]], [0], 1, 0, 1),
+        (False, 9.5, False, False, [2, -1, -1], [[0, -1, -1]], [0], 0, 0, 1),
     ],
 )
 def test_verify_tree_greedy_csd(
     has_table_entry,
     draft_logit,
     force_accept_disabled,
+    ignore_prob_ratio,
     expected_predicts,
     expected_accept_index,
     expected_accept_token_num,
@@ -191,6 +194,7 @@ def test_verify_tree_greedy_csd(
         csd_delta_capacity=4,
         csd_enabled=True,
         csd_dynamic_update=True,
+        csd_dynamic_update_ignore_prob_ratio=ignore_prob_ratio,
         csd_force_accept_disabled=force_accept_disabled,
         csd_logit_margin=math.log(0.5),
     )

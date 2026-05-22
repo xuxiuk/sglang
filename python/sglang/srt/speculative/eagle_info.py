@@ -361,6 +361,12 @@ class EagleVerifyInput(SpecInput, EagleVerifyInputV2Mixin):
                     and csd_runtime.dynamic_update
                     and csd_runtime.delta_buffer is not None
                 ),
+                csd_dynamic_update_ignore_prob_ratio=bool(
+                    csd_runtime
+                    and csd_runtime.dynamic_update
+                    and csd_runtime.dynamic_update_ignore_prob_ratio
+                    and csd_runtime.delta_buffer is not None
+                ),
                 csd_force_accept_disabled=bool(
                     csd_runtime and csd_runtime.force_accept_disabled
                 ),
@@ -451,6 +457,12 @@ class EagleVerifyInput(SpecInput, EagleVerifyInputV2Mixin):
                 csd_dynamic_update=bool(
                     csd_runtime
                     and csd_runtime.dynamic_update
+                    and csd_runtime.delta_buffer is not None
+                ),
+                csd_dynamic_update_ignore_prob_ratio=bool(
+                    csd_runtime
+                    and csd_runtime.dynamic_update
+                    and csd_runtime.dynamic_update_ignore_prob_ratio
                     and csd_runtime.delta_buffer is not None
                 ),
                 csd_force_accept_disabled=bool(

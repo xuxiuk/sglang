@@ -504,6 +504,7 @@ class ServerArgs:
     speculative_csd_freq_threshold: int = 6
     speculative_csd_prob_ratio: float = 0.01
     speculative_csd_dynamic_update: bool = False
+    speculative_csd_dynamic_update_ignore_prob_ratio: bool = False
     speculative_csd_delta_save_path: Optional[str] = None
     speculative_csd_delta_capacity: Optional[int] = None
     speculative_csd_rebuild_threshold: int = 4096
@@ -2993,6 +2994,14 @@ class ServerArgs:
         if self.speculative_algorithm == "NEXTN":
             self.speculative_algorithm = "EAGLE"
 
+        if (
+            self.speculative_csd_dynamic_update_ignore_prob_ratio
+            and not self.speculative_csd_dynamic_update
+        ):
+            raise ValueError(
+                "--speculative-csd-dynamic-update-ignore-prob-ratio requires --speculative-csd-dynamic-update."
+            )
+
         if self.speculative_csd_enabled:
             if self.speculative_csd_freq_threshold < 1:
                 raise ValueError(
@@ -4899,6 +4908,12 @@ class ServerArgs:
             action="store_true",
             default=ServerArgs.speculative_csd_dynamic_update,
             help="Enable dynamic CSD pair collection during the current server run.",
+        )
+        parser.add_argument(
+            "--speculative-csd-dynamic-update-ignore-prob-ratio",
+            action="store_true",
+            default=ServerArgs.speculative_csd_dynamic_update_ignore_prob_ratio,
+            help="Record dynamic CSD pairs without requiring the prob-ratio logit gate; force-accept still uses the prob ratio.",
         )
         parser.add_argument(
             "--speculative-csd-delta-save-path",

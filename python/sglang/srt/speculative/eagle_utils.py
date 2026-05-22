@@ -180,6 +180,7 @@ def verify_tree_greedy_func(
     csd_delta_capacity: int = 0,
     csd_enabled: bool = False,
     csd_dynamic_update: bool = False,
+    csd_dynamic_update_ignore_prob_ratio: bool = False,
     csd_force_accept_disabled: bool = False,
     csd_logit_margin: float | None = None,
 ):
@@ -207,6 +208,7 @@ def verify_tree_greedy_func(
             csd_delta_capacity=csd_delta_capacity,
             csd_enabled=csd_enabled,
             csd_dynamic_update=csd_dynamic_update,
+            csd_dynamic_update_ignore_prob_ratio=csd_dynamic_update_ignore_prob_ratio,
             csd_force_accept_disabled=csd_force_accept_disabled,
             csd_logit_margin=csd_logit_margin,
         )

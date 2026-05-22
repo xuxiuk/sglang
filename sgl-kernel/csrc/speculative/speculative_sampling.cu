@@ -52,6 +52,7 @@ void tree_speculative_sampling_target_only(
     int64_t csd_delta_capacity,
     bool csd_enabled,
     bool csd_dynamic_update,
+    bool csd_dynamic_update_ignore_prob_ratio,
     bool csd_force_accept_disabled,
     double csd_logit_margin,
     double threshold_single,
@@ -214,6 +215,7 @@ void tree_speculative_sampling_target_only(
       static_cast<uint32_t>(csd_delta_capacity),
       csd_enabled,
       csd_dynamic_update,
+      csd_dynamic_update_ignore_prob_ratio,
       csd_force_accept_disabled,
       static_cast<float>(csd_logit_margin),
       stream);

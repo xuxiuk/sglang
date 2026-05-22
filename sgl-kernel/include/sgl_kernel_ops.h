@@ -398,6 +398,7 @@ void tree_speculative_sampling_target_only(
     int64_t csd_delta_capacity,
     bool csd_enabled,
     bool csd_dynamic_update,
+    bool csd_dynamic_update_ignore_prob_ratio,
     bool csd_force_accept_disabled,
     double csd_logit_margin,
     double threshold_single = 1,
@@ -425,6 +426,7 @@ void verify_tree_greedy(
     int64_t csd_delta_capacity,
     bool csd_enabled,
     bool csd_dynamic_update,
+    bool csd_dynamic_update_ignore_prob_ratio,
     bool csd_force_accept_disabled,
     double csd_logit_margin);
 
