@@ -159,6 +159,7 @@ class SGLangModelConfig(ModelConfig):
     speculative_csd_freq_threshold: PositiveInt | None = None
     speculative_csd_prob_ratio: PositiveFloat | None = None
     speculative_csd_rebuild_top_keep: float | None = None
+    port: PositiveInt | None = None
     speculative_csd_dynamic_update: bool = False
     speculative_csd_force_accept_disabled: bool = False
     speculative_csd_save_table_path: str | None = None
@@ -259,6 +260,7 @@ class SGLangModel(LightevalModel):
             "speculative_csd_freq_threshold": config.speculative_csd_freq_threshold,
             "speculative_csd_prob_ratio": config.speculative_csd_prob_ratio,
             "speculative_csd_rebuild_top_keep": config.speculative_csd_rebuild_top_keep,
+            "port": config.port,
             "watchdog_timeout": config.watchdog_timeout,
             "mamba_scheduler_strategy": config.mamba_scheduler_strategy,
             "log_level": config.log_level,

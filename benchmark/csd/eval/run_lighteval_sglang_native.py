@@ -53,6 +53,7 @@ def parse_args():
     parser.add_argument("--mode", default=None)
     parser.add_argument("--server-log", default=None)
     parser.add_argument("--cuda-devices", default=None)
+    parser.add_argument("--port", type=int, default=30000)
     parser.add_argument("--tensor-parallel-size", type=int, default=1)
     parser.add_argument("--data-parallel-size", type=int, default=1)
     parser.add_argument("--mem-fraction-static", type=float, default=0.8)
@@ -152,6 +153,7 @@ def _run_config(args):
         "model": args.model,
         "tokenizer": args.tokenizer,
         "cuda_devices": args.cuda_devices,
+        "port": args.port,
         "tensor_parallel_size": args.tensor_parallel_size,
         "data_parallel_size": args.data_parallel_size,
         "mem_fraction_static": args.mem_fraction_static,
@@ -204,6 +206,7 @@ def _server_config(args):
         "speculative_csd_freq_threshold": args.csd_freq_threshold,
         "speculative_csd_prob_ratio": args.csd_prob_ratio,
         "speculative_csd_rebuild_top_keep": args.csd_rebuild_top_keep,
+        "port": args.port,
         "tp_size": args.tensor_parallel_size,
         "dp_size": args.data_parallel_size,
         "mem_fraction_static": args.mem_fraction_static,
@@ -402,6 +405,7 @@ def _build_model_config(args):
         speculative_csd_freq_threshold=args.csd_freq_threshold if args.csd_enabled else None,
         speculative_csd_prob_ratio=args.csd_prob_ratio if args.csd_enabled else None,
         speculative_csd_rebuild_top_keep=args.csd_rebuild_top_keep if args.csd_enabled else None,
+        port=args.port,
         speculative_csd_dynamic_update=args.csd_dynamic_update,
         speculative_csd_force_accept_disabled=args.csd_force_accept_disabled,
         speculative_csd_save_table_path=args.csd_save_table_path,
