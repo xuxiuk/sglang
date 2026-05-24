@@ -508,7 +508,7 @@ class ServerArgs:
     speculative_csd_delta_save_path: Optional[str] = None
     speculative_csd_delta_capacity: Optional[int] = None
     speculative_csd_rebuild_threshold: int = 4096
-    speculative_csd_rebuild_top_freq_ratio: Optional[float] = None
+    speculative_csd_rebuild_top_keep: Optional[float] = None
     speculative_csd_force_accept_disabled: bool = False
     speculative_token_map: Optional[str] = None
     speculative_attention_mode: str = "prefill"
@@ -3011,11 +3011,14 @@ class ServerArgs:
                 raise ValueError(
                     "--speculative-csd-prob-ratio must be in the range (0, 1]."
                 )
-            if self.speculative_csd_rebuild_top_freq_ratio is not None and not (
-                0 < self.speculative_csd_rebuild_top_freq_ratio <= 1
+            if (
+                self.speculative_csd_rebuild_top_keep is not None
+                and self.speculative_csd_rebuild_top_keep < 0
             ):
                 raise ValueError(
-                    "--speculative-csd-rebuild-top-freq-ratio must be in the range (0, 1]."
+                    "--speculative-csd-rebuild-top-keep must be non-negative; use 0 "
+                    "to disable the cap, (0, 1] for a ratio, or > 1 for an "
+                    "absolute top-K."
                 )
             if (
                 not self.speculative_csd_dynamic_update
@@ -4934,10 +4937,16 @@ class ServerArgs:
             help="Minimum number of dynamically collected CSD pairs required to trigger an online CSD table rebuild; set <= 0 to disable online rebuild.",
         )
         parser.add_argument(
+            "--speculative-csd-rebuild-top-keep",
             "--speculative-csd-rebuild-top-freq-ratio",
+            dest="speculative_csd_rebuild_top_keep",
             type=float,
-            default=ServerArgs.speculative_csd_rebuild_top_freq_ratio,
-            help="Optional top-frequency pair ratio kept per local CSD table when an online CSD hash-table rebuild is triggered.",
+            default=ServerArgs.speculative_csd_rebuild_top_keep,
+            help=(
+                "Optional local CSD table rebuild cap: use 0 to disable, "
+                "(0, 1] for a top-frequency ratio, or > 1 for an absolute "
+                "top-K pair count."
+            ),
         )
         parser.add_argument(
             "--speculative-csd-force-accept-disabled",

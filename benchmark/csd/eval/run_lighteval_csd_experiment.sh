@@ -51,7 +51,7 @@ CSD_FREQ_THRESHOLD=${CSD_FREQ_THRESHOLD:-3}
 CSD_PROB_RATIO=${CSD_PROB_RATIO:-0.3}
 CSD_TABLE_PROB_RATIO=${CSD_TABLE_PROB_RATIO:-1}
 CSD_DYNAMIC_UPDATE=${CSD_DYNAMIC_UPDATE:-0}
-CSD_REBUILD_TOP_FREQ_RATIO=${CSD_REBUILD_TOP_FREQ_RATIO:-}
+CSD_REBUILD_TOP_KEEP=${CSD_REBUILD_TOP_KEEP:-${CSD_REBUILD_TOP_FREQ_RATIO:-}}
 REDPAJAMA_SAMPLES_PER_DOMAIN=${REDPAJAMA_SAMPLES_PER_DOMAIN:-1000}
 REDPAJAMA_TEMPERATURE=${REDPAJAMA_TEMPERATURE:-1.0}
 REDPAJAMA_SPEC_NUM_STEPS=${REDPAJAMA_SPEC_NUM_STEPS:-3}
@@ -137,7 +137,7 @@ keys = [
     "CSD_FREQ_THRESHOLD",
     "CSD_PROB_RATIO",
     "CSD_DYNAMIC_UPDATE",
-    "CSD_REBUILD_TOP_FREQ_RATIO",
+    "CSD_REBUILD_TOP_KEEP",
     "REDPAJAMA_SAMPLES_PER_DOMAIN",
     "REDPAJAMA_TEMPERATURE",
     "REDPAJAMA_SPEC_NUM_STEPS",
@@ -256,8 +256,8 @@ run_lighteval_task() {
     if [[ "${CSD_DYNAMIC_UPDATE}" == "1" ]]; then
       extra_args+=(--csd-dynamic-update)
     fi
-    if [[ -n "${CSD_REBUILD_TOP_FREQ_RATIO}" ]]; then
-      extra_args+=(--csd-rebuild-top-freq-ratio "${CSD_REBUILD_TOP_FREQ_RATIO}")
+    if [[ -n "${CSD_REBUILD_TOP_KEEP}" ]]; then
+      extra_args+=(--csd-rebuild-top-keep "${CSD_REBUILD_TOP_KEEP}")
     fi
   fi
 
@@ -298,8 +298,8 @@ run_lighteval_task() {
 suite_run_id() {
   local value
   value="tasks$(printf '%s' "${TASKS}" | tr ' ' '-')_steps${SPEC_NUM_STEPS}_topk${SPEC_TOPK}_draft${SPEC_DRAFT_TOKENS}_freq${CSD_FREQ_THRESHOLD}_ratio${CSD_PROB_RATIO}"
-  if [[ -n "${CSD_REBUILD_TOP_FREQ_RATIO}" ]]; then
-    value="${value}_topfreq${CSD_REBUILD_TOP_FREQ_RATIO}"
+  if [[ -n "${CSD_REBUILD_TOP_KEEP}" ]]; then
+    value="${value}_topkeep${CSD_REBUILD_TOP_KEEP}"
   fi
   if [[ -n "${RUN_VARIANT}" ]]; then
     value="${value}_${RUN_VARIANT}"
@@ -371,8 +371,8 @@ apply_suite_overrides() {
       dynamic|dynamic_update|csd_dynamic_update)
         CSD_DYNAMIC_UPDATE=$(normalize_bool "${value}")
         ;;
-      rebuild_top_freq_ratio|top_freq_ratio|topfreq|csd_rebuild_top_freq_ratio)
-        CSD_REBUILD_TOP_FREQ_RATIO="${value}"
+      rebuild_top_keep|top_keep|topkeep|csd_rebuild_top_keep|rebuild_top_freq_ratio|top_freq_ratio|topfreq|csd_rebuild_top_freq_ratio)
+        CSD_REBUILD_TOP_KEEP="${value}"
         ;;
       *)
         echo "Unknown suite override: ${key}" >&2
@@ -402,7 +402,7 @@ run_lighteval_suite() {
   local old_csd_freq_threshold="${CSD_FREQ_THRESHOLD}"
   local old_csd_prob_ratio="${CSD_PROB_RATIO}"
   local old_csd_dynamic_update="${CSD_DYNAMIC_UPDATE}"
-  local old_csd_rebuild_top_freq_ratio="${CSD_REBUILD_TOP_FREQ_RATIO}"
+  local old_csd_rebuild_top_keep="${CSD_REBUILD_TOP_KEEP}"
 
   if ! apply_suite_overrides "$@"; then
     TASKS="${old_tasks}"
@@ -416,7 +416,7 @@ run_lighteval_suite() {
     CSD_FREQ_THRESHOLD="${old_csd_freq_threshold}"
     CSD_PROB_RATIO="${old_csd_prob_ratio}"
     CSD_DYNAMIC_UPDATE="${old_csd_dynamic_update}"
-    CSD_REBUILD_TOP_FREQ_RATIO="${old_csd_rebuild_top_freq_ratio}"
+    CSD_REBUILD_TOP_KEEP="${old_csd_rebuild_top_keep}"
     return 1
   fi
 
@@ -448,7 +448,7 @@ run_lighteval_suite() {
   CSD_FREQ_THRESHOLD="${old_csd_freq_threshold}"
   CSD_PROB_RATIO="${old_csd_prob_ratio}"
   CSD_DYNAMIC_UPDATE="${old_csd_dynamic_update}"
-  CSD_REBUILD_TOP_FREQ_RATIO="${old_csd_rebuild_top_freq_ratio}"
+  CSD_REBUILD_TOP_KEEP="${old_csd_rebuild_top_keep}"
   return "${status}"
 }
 

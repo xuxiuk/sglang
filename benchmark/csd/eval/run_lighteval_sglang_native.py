@@ -93,7 +93,13 @@ def parse_args():
     parser.add_argument("--csd-save-table-path", default=None)
     parser.add_argument("--csd-freq-threshold", type=int, default=None)
     parser.add_argument("--csd-prob-ratio", type=float, default=None)
-    parser.add_argument("--csd-rebuild-top-freq-ratio", type=float, default=None)
+    parser.add_argument(
+        "--csd-rebuild-top-keep",
+        "--csd-rebuild-top-freq-ratio",
+        dest="csd_rebuild_top_keep",
+        type=float,
+        default=None,
+    )
     parser.add_argument("--csd-dynamic-update", action="store_true")
     parser.add_argument("--csd-force-accept-disabled", action="store_true")
     parser.add_argument("--csd-enabled", action="store_true")
@@ -177,7 +183,7 @@ def _run_config(args):
             "save_table_path": args.csd_save_table_path,
             "freq_threshold": args.csd_freq_threshold,
             "prob_ratio": args.csd_prob_ratio,
-            "rebuild_top_freq_ratio": args.csd_rebuild_top_freq_ratio,
+            "rebuild_top_keep": args.csd_rebuild_top_keep,
             "dynamic_update": args.csd_dynamic_update,
             "force_accept_disabled": args.csd_force_accept_disabled,
         },
@@ -197,7 +203,7 @@ def _server_config(args):
         "speculative_csd_save_table_path": args.csd_save_table_path,
         "speculative_csd_freq_threshold": args.csd_freq_threshold,
         "speculative_csd_prob_ratio": args.csd_prob_ratio,
-        "speculative_csd_rebuild_top_freq_ratio": args.csd_rebuild_top_freq_ratio,
+        "speculative_csd_rebuild_top_keep": args.csd_rebuild_top_keep,
         "tp_size": args.tensor_parallel_size,
         "dp_size": args.data_parallel_size,
         "mem_fraction_static": args.mem_fraction_static,
@@ -395,7 +401,7 @@ def _build_model_config(args):
         speculative_csd_table_path=args.csd_table_path if args.csd_enabled else None,
         speculative_csd_freq_threshold=args.csd_freq_threshold if args.csd_enabled else None,
         speculative_csd_prob_ratio=args.csd_prob_ratio if args.csd_enabled else None,
-        speculative_csd_rebuild_top_freq_ratio=args.csd_rebuild_top_freq_ratio if args.csd_enabled else None,
+        speculative_csd_rebuild_top_keep=args.csd_rebuild_top_keep if args.csd_enabled else None,
         speculative_csd_dynamic_update=args.csd_dynamic_update,
         speculative_csd_force_accept_disabled=args.csd_force_accept_disabled,
         speculative_csd_save_table_path=args.csd_save_table_path,

@@ -159,16 +159,21 @@ class CSDTableStore:
     def filtered_keys(
         self,
         freq_threshold: int,
-        top_freq_ratio: Optional[float] = None,
+        top_keep: Optional[float] = None,
     ) -> List[int]:
         sorted_items = sorted(
             self.entries.items(),
             key=lambda item: (-item[1].freq, item[0]),
         )
         keys = [key for key, entry in sorted_items if entry.freq >= freq_threshold]
-        if top_freq_ratio is None or not keys:
+        if top_keep is None or not keys:
             return keys
-        keep_count = max(1, math.ceil(len(sorted_items) * top_freq_ratio))
+        if top_keep <= 0:
+            return keys
+        if top_keep <= 1:
+            keep_count = max(1, math.ceil(len(sorted_items) * top_keep))
+        else:
+            keep_count = max(1, math.floor(top_keep))
         if len(keys) <= keep_count:
             return keys
         return keys[:keep_count]
@@ -179,10 +184,10 @@ class CSDTableStore:
         freq_threshold: int,
         max_probe: int = CSD_DEFAULT_MAX_PROBE,
         load_factor: float = CSD_DEFAULT_LOAD_FACTOR,
-        top_freq_ratio: Optional[float] = None,
+        top_keep: Optional[float] = None,
     ) -> "CSDHashTable":
         return build_csd_hash_table(
-            self.filtered_keys(freq_threshold, top_freq_ratio=top_freq_ratio),
+            self.filtered_keys(freq_threshold, top_keep=top_keep),
             device=device,
             max_probe=max_probe,
             load_factor=load_factor,
@@ -514,7 +519,7 @@ class CSDRuntime:
         rebuild_threshold: int,
         max_probe: int = CSD_DEFAULT_MAX_PROBE,
         load_factor: float = CSD_DEFAULT_LOAD_FACTOR,
-        top_freq_ratio: Optional[float] = None,
+        top_keep: Optional[float] = None,
     ) -> bool:
         if not self.online_rebuild_enabled or self.delta_buffer is None:
             return False
@@ -534,7 +539,7 @@ class CSDRuntime:
         self.delta_counts.clear()
         keys = self.table_store.filtered_keys(
             freq_threshold,
-            top_freq_ratio=top_freq_ratio,
+            top_keep=top_keep,
         )
         self.rebuild_future = _CSD_REBUILD_EXECUTOR.submit(
             build_csd_hash_table_payload,
@@ -550,7 +555,7 @@ class CSDRuntime:
         freq_threshold: int,
         max_probe: int = CSD_DEFAULT_MAX_PROBE,
         load_factor: float = CSD_DEFAULT_LOAD_FACTOR,
-        top_freq_ratio: Optional[float] = None,
+        top_keep: Optional[float] = None,
     ) -> None:
         self.flush_delta()
         self.table_store.merge_counts(self.delta_counts)
@@ -561,5 +566,5 @@ class CSDRuntime:
             freq_threshold=freq_threshold,
             max_probe=max_probe,
             load_factor=load_factor,
-            top_freq_ratio=top_freq_ratio,
+            top_keep=top_keep,
         )

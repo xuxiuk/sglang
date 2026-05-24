@@ -17,7 +17,7 @@ register_cpu_ci(est_time=5, suite="stage-a-test-cpu")
 
 
 class TestCSDRuntime(CustomTestCase):
-    def test_filtered_keys_top_freq_ratio(self):
+    def test_filtered_keys_top_keep_ratio_and_count(self):
         store = CSDTableStore()
         store.add_pair(1, 2, freq=10)
         store.add_pair(3, 4, freq=7)
@@ -29,19 +29,27 @@ class TestCSDRuntime(CustomTestCase):
             [pack_csd_pair(1, 2), pack_csd_pair(3, 4), pack_csd_pair(5, 6)],
         )
         self.assertEqual(
-            store.filtered_keys(freq_threshold=2, top_freq_ratio=0.5),
+            store.filtered_keys(freq_threshold=2, top_keep=0.5),
             [pack_csd_pair(1, 2), pack_csd_pair(3, 4)],
         )
         self.assertEqual(
-            store.filtered_keys(freq_threshold=6, top_freq_ratio=0.5),
+            store.filtered_keys(freq_threshold=6, top_keep=0.5),
             [pack_csd_pair(1, 2), pack_csd_pair(3, 4)],
         )
         self.assertEqual(
-            store.filtered_keys(freq_threshold=2, top_freq_ratio=0.05),
+            store.filtered_keys(freq_threshold=2, top_keep=0.05),
             [pack_csd_pair(1, 2)],
         )
+        self.assertEqual(
+            store.filtered_keys(freq_threshold=2, top_keep=2),
+            [pack_csd_pair(1, 2), pack_csd_pair(3, 4)],
+        )
+        self.assertEqual(
+            store.filtered_keys(freq_threshold=2, top_keep=10),
+            [pack_csd_pair(1, 2), pack_csd_pair(3, 4), pack_csd_pair(5, 6)],
+        )
 
-    def test_dynamic_rebuild_uses_top_freq_ratio_without_pruning_store(self):
+    def test_dynamic_rebuild_uses_top_keep_without_pruning_store(self):
         table_store = CSDTableStore()
         table_store.add_pair(1, 2, freq=1)
         table_store.add_pair(3, 4, freq=1)
@@ -61,6 +69,7 @@ class TestCSDRuntime(CustomTestCase):
             enabled=True,
             dynamic_update=True,
             force_accept_disabled=False,
+            dynamic_update_ignore_prob_ratio=False,
             table=CSDHashTable.empty(device="cpu"),
             metrics=CSDMetrics.allocate(device="cpu"),
             delta_buffer=delta_buffer,
@@ -71,7 +80,7 @@ class TestCSDRuntime(CustomTestCase):
         started = runtime.maybe_start_async_rebuild(
             freq_threshold=1,
             rebuild_threshold=1,
-            top_freq_ratio=0.5,
+            top_keep=0.5,
         )
         self.assertTrue(started)
         self.assertIsNotNone(runtime.rebuild_future)

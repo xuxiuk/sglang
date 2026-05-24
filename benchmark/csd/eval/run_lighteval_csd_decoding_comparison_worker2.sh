@@ -37,7 +37,7 @@ LIGHTEVAL_BOOTSTRAP_ITERS=${LIGHTEVAL_BOOTSTRAP_ITERS:-1000}
 LIGHTEVAL_OVERRIDE_CHAT_TEMPLATE=${LIGHTEVAL_OVERRIDE_CHAT_TEMPLATE:-auto}
 LIGHTEVAL_REMOVE_REASONING_TAGS=${LIGHTEVAL_REMOVE_REASONING_TAGS:-1}
 LIGHTEVAL_REASONING_TAGS="${LIGHTEVAL_REASONING_TAGS:-[('<think>', '</think>')]}"
-RESULT_FILE=${RESULT_FILE:-"${RESULT_DIR}/csd_decoding_comparison_worker2.jsonl"}
+RESULT_FILE=${RESULT_FILE:-"${RESULT_DIR}/csd_decoding_comparison.jsonl"}
 SERVER_LOG="in_process_lighteval"
 
 LCB_TASK=${LCB_TASK:-lcb:codegeneration_v6}
@@ -59,12 +59,12 @@ CODING_RECOMMENDED_GEN_KWARGS=${CODING_RECOMMENDED_GEN_KWARGS:-temperature=0.6,t
 THINK_GENERAL_RECOMMENDED_GEN_KWARGS=${THINK_GENERAL_RECOMMENDED_GEN_KWARGS:-temperature=1.0,top_p=0.95,top_k=20,min_p=0.0,presence_penalty=1.5,repetition_penalty=1.0}
 
 SPEC_NUM_STEPS=${SPEC_NUM_STEPS:-5}
-SPEC_TOPK=${SPEC_TOPK:-3}
-SPEC_DRAFT_TOKENS=${SPEC_DRAFT_TOKENS:-15}
-CSD_FREQ_THRESHOLD=${CSD_FREQ_THRESHOLD:-3}
+SPEC_TOPK=${SPEC_TOPK:-1}
+SPEC_DRAFT_TOKENS=${SPEC_DRAFT_TOKENS:-5}
+CSD_FREQ_THRESHOLD=${CSD_FREQ_THRESHOLD:-6}
 CSD_PROB_RATIO=${CSD_PROB_RATIO:-0.3}
 CSD_TABLE_PROB_RATIO=${CSD_TABLE_PROB_RATIO:-0.3}
-CSD_REBUILD_TOP_FREQ_RATIO=${CSD_REBUILD_TOP_FREQ_RATIO:-0.05}
+CSD_REBUILD_TOP_KEEP=${CSD_REBUILD_TOP_KEEP:-${CSD_REBUILD_TOP_FREQ_RATIO:-15000}}
 REDPAJAMA_SAMPLES_PER_DOMAIN=${REDPAJAMA_SAMPLES_PER_DOMAIN:-1000}
 REDPAJAMA_TEMPERATURE=${REDPAJAMA_TEMPERATURE:-1.0}
 REDPAJAMA_SPEC_NUM_STEPS=${REDPAJAMA_SPEC_NUM_STEPS:-3}
@@ -135,7 +135,7 @@ import json
 import os
 import sys
 
-method, task_slug, task_spec, gen_variant, gen_kwargs, enable_thinking, max_gen_toks, max_length, csd_table_path, dynamic_update, top_freq_ratio = sys.argv[1:12]
+method, task_slug, task_spec, gen_variant, gen_kwargs, enable_thinking, max_gen_toks, max_length, csd_table_path, dynamic_update, top_keep = sys.argv[1:12]
 keys = [
     "RUN_STAMP",
     "OUT_DIR",
@@ -167,7 +167,7 @@ keys = [
     "CSD_FREQ_THRESHOLD",
     "CSD_PROB_RATIO",
     "CSD_TABLE_PROB_RATIO",
-    "CSD_REBUILD_TOP_FREQ_RATIO",
+    "CSD_REBUILD_TOP_KEEP",
     "PLAIN_CSD_TABLE_PATH",
     "RATIO_CSD_TABLE_PATH",
 ]
@@ -183,7 +183,7 @@ config = {
     "max_length": max_length,
     "csd_table_path": csd_table_path or None,
     "csd_dynamic_update": dynamic_update == "1",
-    "csd_rebuild_top_freq_ratio": float(top_freq_ratio) if top_freq_ratio else None,
+    "csd_rebuild_top_keep": float(top_keep) if top_keep else None,
     "server_log": "in_process_lighteval",
 }
 for key in keys:
@@ -203,7 +203,7 @@ run_eval() {
   local max_length="$8"
   local csd_table_path="$9"
   local dynamic_update="${10}"
-  local top_freq_ratio="${11}"
+  local top_keep="${11}"
   local mode="vanilla"
 
   case "${method}" in
@@ -229,11 +229,11 @@ run_eval() {
   local lighteval_task task_name run_name output_path metrics_path tracker_dir config_json
   lighteval_task=$(lighteval_task_spec "${task_spec}")
   task_name=$(safe_name "${lighteval_task}")
-  run_name=$(safe_name "${method}_${task_slug}_${gen_variant}_steps${SPEC_NUM_STEPS}_topk${SPEC_TOPK}_draft${SPEC_DRAFT_TOKENS}_freq${CSD_FREQ_THRESHOLD}_ratio${CSD_PROB_RATIO}_tableratio${CSD_TABLE_PROB_RATIO}_topfreq${top_freq_ratio:-none}_${RUN_STAMP}")
+  run_name=$(safe_name "${method}_${task_slug}_${gen_variant}_steps${SPEC_NUM_STEPS}_topk${SPEC_TOPK}_draft${SPEC_DRAFT_TOKENS}_freq${CSD_FREQ_THRESHOLD}_ratio${CSD_PROB_RATIO}_tableratio${CSD_TABLE_PROB_RATIO}_topkeep${top_keep:-none}_${RUN_STAMP}")
   output_path="${ARTIFACT_DIR}/${run_name}_lighteval_results.json"
   metrics_path="${ARTIFACT_DIR}/${run_name}_lighteval_metrics.json"
   tracker_dir="${ARTIFACT_DIR}/${run_name}_lighteval_tracker"
-  config_json=$(experiment_config_json "${method}" "${task_slug}" "${lighteval_task}" "${gen_variant}" "${gen_kwargs}" "${enable_thinking}" "${max_gen_toks}" "${max_length}" "${csd_table_path}" "${dynamic_update}" "${top_freq_ratio}")
+  config_json=$(experiment_config_json "${method}" "${task_slug}" "${lighteval_task}" "${gen_variant}" "${gen_kwargs}" "${enable_thinking}" "${max_gen_toks}" "${max_length}" "${csd_table_path}" "${dynamic_update}" "${top_keep}")
 
   local extra_args=()
   if [[ -n "${LIMIT}" ]]; then
@@ -269,8 +269,8 @@ run_eval() {
     if [[ "${dynamic_update}" == "1" ]]; then
       extra_args+=(--csd-dynamic-update)
     fi
-    if [[ -n "${top_freq_ratio}" ]]; then
-      extra_args+=(--csd-rebuild-top-freq-ratio "${top_freq_ratio}")
+    if [[ -n "${top_keep}" ]]; then
+      extra_args+=(--csd-rebuild-top-keep "${top_keep}")
     fi
   fi
 
@@ -316,7 +316,8 @@ run_method_set() {
   local enable_thinking="$4"
   local max_gen_toks="$5"
   local max_length="$6"
-  local methods=(csd_plain_table_top5 csd_ratio_table_static csd_ratio_table csd_ratio_table_top5)
+  local methods=(baseline vanilla csd_plain_table_static csd_plain_table csd_plain_table_top_keep csd_ratio_table_static csd_ratio_table csd_ratio_table_top_keep)
+  # local methods=(baseline vanilla csd_plain_table_static csd_plain_table)
   local method status
 
   if [[ "${TASK_FILTER}" != "all" && "${TASK_FILTER}" != "${task_slug}" ]]; then
@@ -338,8 +339,8 @@ run_method_set() {
       csd_plain_table)
         run_eval "${method}" "${task_slug}" "${task_spec}" recommended "${gen_kwargs}" "${enable_thinking}" "${max_gen_toks}" "${max_length}" "${PLAIN_CSD_TABLE_PATH}" 1 "" || status=$?
         ;;
-      csd_plain_table_top5)
-        run_eval "${method}" "${task_slug}" "${task_spec}" recommended "${gen_kwargs}" "${enable_thinking}" "${max_gen_toks}" "${max_length}" "${PLAIN_CSD_TABLE_PATH}" 1 "${CSD_REBUILD_TOP_FREQ_RATIO}" || status=$?
+      csd_plain_table_top_keep)
+        run_eval "${method}" "${task_slug}" "${task_spec}" recommended "${gen_kwargs}" "${enable_thinking}" "${max_gen_toks}" "${max_length}" "${PLAIN_CSD_TABLE_PATH}" 1 "${CSD_REBUILD_TOP_KEEP}" || status=$?
         ;;
       csd_ratio_table_static)
         run_eval "${method}" "${task_slug}" "${task_spec}" recommended "${gen_kwargs}" "${enable_thinking}" "${max_gen_toks}" "${max_length}" "${RATIO_CSD_TABLE_PATH}" 0 "" || status=$?
@@ -347,8 +348,8 @@ run_method_set() {
       csd_ratio_table)
         run_eval "${method}" "${task_slug}" "${task_spec}" recommended "${gen_kwargs}" "${enable_thinking}" "${max_gen_toks}" "${max_length}" "${RATIO_CSD_TABLE_PATH}" 1 "" || status=$?
         ;;
-      csd_ratio_table_top5)
-        run_eval "${method}" "${task_slug}" "${task_spec}" recommended "${gen_kwargs}" "${enable_thinking}" "${max_gen_toks}" "${max_length}" "${RATIO_CSD_TABLE_PATH}" 1 "${CSD_REBUILD_TOP_FREQ_RATIO}" || status=$?
+      csd_ratio_table_top_keep)
+        run_eval "${method}" "${task_slug}" "${task_spec}" recommended "${gen_kwargs}" "${enable_thinking}" "${max_gen_toks}" "${max_length}" "${RATIO_CSD_TABLE_PATH}" 1 "${CSD_REBUILD_TOP_KEEP}" || status=$?
         ;;
     esac
     if [[ "${status}" != "0" ]]; then
@@ -357,7 +358,7 @@ run_method_set() {
   done
 }
 
-run_method_set "lcb" "${LCB_TASK}" "${CODING_RECOMMENDED_GEN_KWARGS}" true "${LCB_MAX_GEN_TOKS}" "${LCB_MAX_LENGTH}"
+# run_method_set "lcb" "${LCB_TASK}" "${THINK_GENERAL_RECOMMENDED_GEN_KWARGS}" true "${LCB_MAX_GEN_TOKS}" "${LCB_MAX_LENGTH}"
 run_method_set "aime25" "${AIME_TASK}" "${THINK_GENERAL_RECOMMENDED_GEN_KWARGS}" true "${AIME_MAX_GEN_TOKS}" "${AIME_MAX_LENGTH}"
 run_method_set "math500" "${MATH500_TASK}" "${THINK_GENERAL_RECOMMENDED_GEN_KWARGS}" true "${MATH500_MAX_GEN_TOKS}" "${MATH500_MAX_LENGTH}"
 run_method_set "gsm8k" "${GSM8K_TASK}" "${THINK_GENERAL_RECOMMENDED_GEN_KWARGS}" true "${GSM8K_MAX_GEN_TOKS}" "${GSM8K_MAX_LENGTH}"

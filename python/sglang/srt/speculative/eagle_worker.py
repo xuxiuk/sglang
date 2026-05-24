@@ -788,7 +788,7 @@ class EAGLEWorker(TpModelWorker):
         self.csd_runtime.maybe_start_async_rebuild(
             freq_threshold=self.server_args.speculative_csd_freq_threshold,
             rebuild_threshold=self.server_args.speculative_csd_rebuild_threshold,
-            top_freq_ratio=self.server_args.speculative_csd_rebuild_top_freq_ratio,
+            top_keep=self.server_args.speculative_csd_rebuild_top_keep,
         )
 
         # Post process based on verified outputs.

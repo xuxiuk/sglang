@@ -65,18 +65,18 @@ class TestPrepareServerArgs(CustomTestCase):
     @patch("sglang.srt.server_args.ServerArgs._handle_gpu_memory_settings")
     @patch("sglang.srt.server_args.ServerArgs._handle_piecewise_cuda_graph")
     @patch("sglang.srt.server_args.get_device_memory_capacity", return_value=1 << 30)
-    def test_prepare_server_args_csd_rebuild_top_freq_ratio(self, *_mocks):
+    def test_prepare_server_args_csd_rebuild_top_keep(self, *_mocks):
         server_args = prepare_server_args(
             [
                 "--model-path",
                 DEFAULT_SMALL_MODEL_NAME_FOR_TEST_QWEN,
                 "--speculative-csd",
                 "--speculative-csd-dynamic-update",
-                "--speculative-csd-rebuild-top-freq-ratio",
-                "0.05",
+                "--speculative-csd-rebuild-top-keep",
+                "15000",
             ]
         )
-        self.assertEqual(server_args.speculative_csd_rebuild_top_freq_ratio, 0.05)
+        self.assertEqual(server_args.speculative_csd_rebuild_top_keep, 15000)
 
     @patch("sglang.srt.server_args.ServerArgs._handle_other_validations")
     @patch("sglang.srt.server_args.ServerArgs._handle_debug_utils")
@@ -110,16 +110,16 @@ class TestPrepareServerArgs(CustomTestCase):
     @patch("sglang.srt.server_args.ServerArgs._handle_gpu_memory_settings")
     @patch("sglang.srt.server_args.ServerArgs._handle_piecewise_cuda_graph")
     @patch("sglang.srt.server_args.get_device_memory_capacity", return_value=1 << 30)
-    def test_prepare_server_args_rejects_invalid_csd_rebuild_top_freq_ratio(self, *_mocks):
-        with self.assertRaisesRegex(ValueError, "speculative-csd-rebuild-top-freq-ratio"):
+    def test_prepare_server_args_rejects_invalid_csd_rebuild_top_keep(self, *_mocks):
+        with self.assertRaisesRegex(ValueError, "speculative-csd-rebuild-top-keep"):
             prepare_server_args(
                 [
                     "--model-path",
                     DEFAULT_SMALL_MODEL_NAME_FOR_TEST_QWEN,
                     "--speculative-csd",
                     "--speculative-csd-dynamic-update",
-                    "--speculative-csd-rebuild-top-freq-ratio",
-                    "0",
+                    "--speculative-csd-rebuild-top-keep",
+                    "-1",
                 ]
             )
 
