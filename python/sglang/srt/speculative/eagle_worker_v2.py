@@ -841,11 +841,12 @@ class EAGLEWorkerV2(BaseSpecWorker):
             accept_length,
             accept_index,
         ) = verify_input.sample(batch, logits_output, vocab_mask, csd_runtime=self.csd_runtime)
-        self.csd_runtime.maybe_start_async_rebuild(
-            freq_threshold=self.server_args.speculative_csd_freq_threshold,
-            rebuild_threshold=self.server_args.speculative_csd_rebuild_threshold,
-            top_keep=self.server_args.speculative_csd_rebuild_top_keep,
-        )
+        if self.csd_runtime.should_check_async_rebuild():
+            self.csd_runtime.maybe_start_async_rebuild(
+                freq_threshold=self.server_args.speculative_csd_freq_threshold,
+                rebuild_threshold=self.server_args.speculative_csd_rebuild_threshold,
+                top_keep=self.server_args.speculative_csd_rebuild_top_keep,
+            )
         new_seq_lens = batch.seq_lens + accept_length
 
         # Update mamba state for hybrid GDN models after verification

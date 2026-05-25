@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import heapq
 import json
 import math
 from collections import Counter
@@ -18,6 +19,7 @@ CSD_MAX_TOKEN_ID = (1 << 31) - 1
 CSD_DEFAULT_LOAD_FACTOR = 0.5
 CSD_DEFAULT_MAX_PROBE = 16
 CSD_DEFAULT_DELTA_CAPACITY = 1 << 20
+CSD_DEFAULT_REBUILD_CHECK_INTERVAL = 32
 _UINT64_MASK = (1 << 64) - 1
 _CSD_REBUILD_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="csd-rebuild")
 
@@ -72,6 +74,15 @@ class CSDEntry:
 class CSDTableStore:
     entries: Dict[int, CSDEntry] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    _filtered_keys_cache: Dict[Tuple[int, Optional[float], int], List[int]] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _rank_heap: List[Tuple[int, int, int]] = field(default_factory=list, init=False, repr=False)
+    _key_versions: Dict[int, int] = field(default_factory=dict, init=False, repr=False)
+    _rank_heap_initialized: bool = field(default=False, init=False, repr=False)
+    _version: int = field(default=0, init=False, repr=False)
 
     @classmethod
     def load(cls, path: str) -> "CSDTableStore":
@@ -136,6 +147,44 @@ class CSDTableStore:
             for record in self.to_records():
                 f.write(json.dumps(record) + "\n")
 
+    def _touch_key(self, key: int) -> None:
+        entry = self.entries[key]
+        version = self._key_versions.get(key, 0) + 1
+        self._key_versions[key] = version
+        heapq.heappush(self._rank_heap, (-entry.freq, key, version))
+
+    def _ensure_rank_heap(self) -> None:
+        if self._rank_heap_initialized:
+            return
+        self._rank_heap.clear()
+        self._key_versions.clear()
+        for key in self.entries:
+            self._touch_key(key)
+        self._rank_heap_initialized = True
+
+    def _top_filtered_keys_from_heap(
+        self,
+        freq_threshold: int,
+        keep_count: int,
+    ) -> List[int]:
+        self._ensure_rank_heap()
+        keys: List[int] = []
+        skipped: List[Tuple[int, int, int]] = []
+        while self._rank_heap and len(keys) < keep_count:
+            item = heapq.heappop(self._rank_heap)
+            _, key, version = item
+            entry = self.entries.get(key)
+            if entry is None or self._key_versions.get(key) != version:
+                continue
+            if entry.freq < freq_threshold:
+                skipped.append(item)
+                break
+            keys.append(key)
+            skipped.append(item)
+        for item in skipped:
+            heapq.heappush(self._rank_heap, item)
+        return keys
+
     def add_pair(
         self,
         lhs_token: int,
@@ -143,40 +192,71 @@ class CSDTableStore:
         freq: int = 1,
         allow: bool = True,
     ) -> None:
-        self.entries[pack_csd_pair(lhs_token, rhs_token)] = CSDEntry(
+        key = pack_csd_pair(lhs_token, rhs_token)
+        self.entries[key] = CSDEntry(
             freq=freq,
             allow=allow,
         )
+        if self._rank_heap_initialized:
+            self._touch_key(key)
+        self._version += 1
+        self._filtered_keys_cache.clear()
 
     def merge_counts(self, counts: Counter[int]) -> None:
+        if not counts:
+            return
         for key, count in counts.items():
             entry = self.entries.get(key)
             if entry is None:
                 self.entries[key] = CSDEntry(freq=int(count), allow=True)
             else:
                 entry.freq += int(count)
+            if self._rank_heap_initialized:
+                self._touch_key(key)
+        self._version += 1
+        self._filtered_keys_cache.clear()
 
     def filtered_keys(
         self,
         freq_threshold: int,
         top_keep: Optional[float] = None,
     ) -> List[int]:
-        sorted_items = sorted(
-            self.entries.items(),
-            key=lambda item: (-item[1].freq, item[0]),
-        )
-        keys = [key for key, entry in sorted_items if entry.freq >= freq_threshold]
-        if top_keep is None or not keys:
-            return keys
-        if top_keep <= 0:
-            return keys
-        if top_keep <= 1:
-            keep_count = max(1, math.ceil(len(sorted_items) * top_keep))
+        cache_key = (int(freq_threshold), top_keep, self._version)
+        cached_keys = self._filtered_keys_cache.get(cache_key)
+        if cached_keys is not None:
+            return list(cached_keys)
+
+        items = self.entries.items()
+
+        def sorted_filtered_keys() -> List[int]:
+            filtered_items = [
+                (key, entry)
+                for key, entry in items
+                if entry.freq >= freq_threshold
+            ]
+            return [
+                key
+                for key, entry in sorted(
+                    filtered_items,
+                    key=lambda item: (-item[1].freq, item[0]),
+                )
+            ]
+
+        if top_keep is None or top_keep <= 0:
+            keys = sorted_filtered_keys()
         else:
-            keep_count = max(1, math.floor(top_keep))
-        if len(keys) <= keep_count:
-            return keys
-        return keys[:keep_count]
+            if top_keep <= 1:
+                keep_count = max(1, math.ceil(len(self.entries) * top_keep))
+            else:
+                keep_count = max(1, math.floor(top_keep))
+            if keep_count * 2 >= len(self.entries):
+                sorted_keys = sorted_filtered_keys()
+                keys = sorted_keys if len(sorted_keys) <= keep_count else sorted_keys[:keep_count]
+            else:
+                keys = self._top_filtered_keys_from_heap(freq_threshold, keep_count)
+
+        self._filtered_keys_cache[cache_key] = list(keys)
+        return keys
 
     def build_allow_hash_table(
         self,
@@ -421,6 +501,8 @@ class CSDRuntime:
     delta_save_path: Optional[str] = None
     online_rebuild_enabled: bool = False
     rebuild_future: Optional[Future] = None
+    rebuild_check_interval: int = CSD_DEFAULT_REBUILD_CHECK_INTERVAL
+    rebuild_check_countdown: int = 0
 
     @classmethod
     def from_server_args(
@@ -501,6 +583,19 @@ class CSDRuntime:
         self.table_store.merge_counts(self.delta_counts)
         self.delta_counts.clear()
         self.table_store.save(path)
+
+    def should_check_async_rebuild(self) -> bool:
+        if not self.online_rebuild_enabled or self.delta_buffer is None:
+            return False
+        if self.rebuild_future is not None and not self.rebuild_future.done():
+            return False
+        if self.rebuild_check_interval <= 1:
+            return True
+        self.rebuild_check_countdown -= 1
+        if self.rebuild_check_countdown > 0:
+            return False
+        self.rebuild_check_countdown = max(1, self.rebuild_check_interval)
+        return True
 
     def maybe_apply_async_rebuild(
         self,
