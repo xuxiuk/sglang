@@ -102,6 +102,7 @@ def parse_args():
         default=None,
     )
     parser.add_argument("--csd-dynamic-update", action="store_true")
+    parser.add_argument("--csd-dynamic-update-ignore-prob-ratio", action="store_true")
     parser.add_argument("--csd-force-accept-disabled", action="store_true")
     parser.add_argument("--csd-enabled", action="store_true")
     return parser.parse_args()
@@ -187,6 +188,7 @@ def _run_config(args):
             "prob_ratio": args.csd_prob_ratio,
             "rebuild_top_keep": args.csd_rebuild_top_keep,
             "dynamic_update": args.csd_dynamic_update,
+            "dynamic_update_ignore_prob_ratio": args.csd_dynamic_update_ignore_prob_ratio,
             "force_accept_disabled": args.csd_force_accept_disabled,
         },
     }
@@ -200,6 +202,7 @@ def _server_config(args):
         "speculative_num_draft_tokens": args.speculative_num_draft_tokens,
         "speculative_csd_enabled": args.csd_enabled,
         "speculative_csd_dynamic_update": args.csd_dynamic_update,
+        "speculative_csd_dynamic_update_ignore_prob_ratio": args.csd_dynamic_update_ignore_prob_ratio,
         "speculative_csd_force_accept_disabled": args.csd_force_accept_disabled,
         "speculative_csd_table_path": args.csd_table_path,
         "speculative_csd_save_table_path": args.csd_save_table_path,
@@ -407,6 +410,7 @@ def _build_model_config(args):
         speculative_csd_rebuild_top_keep=args.csd_rebuild_top_keep if args.csd_enabled else None,
         port=args.port,
         speculative_csd_dynamic_update=args.csd_dynamic_update,
+        speculative_csd_dynamic_update_ignore_prob_ratio=args.csd_dynamic_update_ignore_prob_ratio,
         speculative_csd_force_accept_disabled=args.csd_force_accept_disabled,
         speculative_csd_save_table_path=args.csd_save_table_path,
         speculative_csd_save_table_metadata=_run_config(args) if args.csd_save_table_path else None,

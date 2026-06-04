@@ -71,6 +71,7 @@ def _csd_config(args):
     return {
         "enabled": args.csd_enabled,
         "dynamic_update": args.csd_dynamic_update,
+        "dynamic_update_ignore_prob_ratio": args.csd_dynamic_update_ignore_prob_ratio,
         "force_accept_disabled": args.csd_force_accept_disabled,
         "freq_threshold": args.csd_freq_threshold,
         "prob_ratio": args.csd_prob_ratio,
@@ -386,6 +387,7 @@ if __name__ == "__main__":
     parser.add_argument("--speculative-num-draft-tokens", type=int, default=None)
     parser.add_argument("--csd-enabled", action="store_true")
     parser.add_argument("--csd-dynamic-update", action="store_true")
+    parser.add_argument("--csd-dynamic-update-ignore-prob-ratio", action="store_true")
     parser.add_argument("--csd-force-accept-disabled", action="store_true")
     parser.add_argument("--csd-freq-threshold", type=int, default=None)
     parser.add_argument("--csd-prob-ratio", type=float, default=None)

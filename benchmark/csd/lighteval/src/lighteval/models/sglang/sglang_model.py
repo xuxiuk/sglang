@@ -161,6 +161,7 @@ class SGLangModelConfig(ModelConfig):
     speculative_csd_rebuild_top_keep: float | None = None
     port: PositiveInt | None = None
     speculative_csd_dynamic_update: bool = False
+    speculative_csd_dynamic_update_ignore_prob_ratio: bool = False
     speculative_csd_force_accept_disabled: bool = False
     speculative_csd_save_table_path: str | None = None
     speculative_csd_save_table_metadata: dict[str, Any] | None = None
@@ -270,6 +271,8 @@ class SGLangModel(LightevalModel):
             self.model_args["speculative_csd_enabled"] = True
         if config.speculative_csd_dynamic_update:
             self.model_args["speculative_csd_dynamic_update"] = True
+        if config.speculative_csd_dynamic_update_ignore_prob_ratio:
+            self.model_args["speculative_csd_dynamic_update_ignore_prob_ratio"] = True
         if config.speculative_csd_force_accept_disabled:
             self.model_args["speculative_csd_force_accept_disabled"] = True
         model = Engine(**self.model_args)
