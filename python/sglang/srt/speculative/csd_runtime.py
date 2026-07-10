@@ -3,13 +3,20 @@ from __future__ import annotations
 import heapq
 import json
 import math
+import os
+import time
 from collections import Counter
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple
 
 import torch
+
+_CSD_NATIVE_EXTENSION_PATH = os.environ.get("SGLANG_CSD_NATIVE_EXTENSION_PATH")
+if _CSD_NATIVE_EXTENSION_PATH:
+    torch.ops.load_library(_CSD_NATIVE_EXTENSION_PATH)
 
 if TYPE_CHECKING:
     from sglang.srt.server_args import ServerArgs
@@ -20,15 +27,40 @@ CSD_DEFAULT_LOAD_FACTOR = 0.5
 CSD_DEFAULT_MAX_PROBE = 16
 CSD_DEFAULT_DELTA_CAPACITY = 1 << 20
 CSD_DEFAULT_REBUILD_CHECK_INTERVAL = 1
+CSD_KEY_SELECTION_FREQUENCY = "frequency"
+CSD_KEY_SELECTION_COUNT_SQUARED_OVER_TOTAL = "count_squared_over_total"
+CSD_KEY_SELECTION_ABOVE_UNIFORM_SHARE = "above_uniform_share"
+CSD_KEY_SELECTION_STRATEGIES = (
+    CSD_KEY_SELECTION_FREQUENCY,
+    CSD_KEY_SELECTION_COUNT_SQUARED_OVER_TOTAL,
+    CSD_KEY_SELECTION_ABOVE_UNIFORM_SHARE,
+)
 _UINT64_MASK = (1 << 64) - 1
-_CSD_REBUILD_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="csd-rebuild")
+_CSD_REBUILD_EXECUTOR = ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix="csd-rebuild"
+)
+
+
+def _csd_profile_range(name: str):
+    if os.environ.get("SGLANG_CSD_PROFILE_ANNOTATIONS", "").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        return torch.profiler.record_function(name)
+    return nullcontext()
 
 
 def pack_csd_pair(lhs_token: int, rhs_token: int) -> int:
     if not 0 <= lhs_token <= CSD_MAX_TOKEN_ID:
-        raise ValueError(f"lhs_token must be in [0, {CSD_MAX_TOKEN_ID}], got {lhs_token}")
+        raise ValueError(
+            f"lhs_token must be in [0, {CSD_MAX_TOKEN_ID}], got {lhs_token}"
+        )
     if not 0 <= rhs_token <= CSD_MAX_TOKEN_ID:
-        raise ValueError(f"rhs_token must be in [0, {CSD_MAX_TOKEN_ID}], got {rhs_token}")
+        raise ValueError(
+            f"rhs_token must be in [0, {CSD_MAX_TOKEN_ID}], got {rhs_token}"
+        )
     return (lhs_token << 32) | rhs_token
 
 
@@ -74,14 +106,22 @@ class CSDEntry:
 class CSDTableStore:
     entries: Dict[int, CSDEntry] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
-    _filtered_keys_cache: Dict[Tuple[int, Optional[float], int], List[int]] = field(
+    _filtered_keys_cache: Dict[
+        Tuple[int, Optional[float], str, float, int],
+        List[int],
+    ] = field(
         default_factory=dict,
         init=False,
         repr=False,
     )
-    _rank_heap: List[Tuple[int, int, int]] = field(default_factory=list, init=False, repr=False)
+    _rank_heap: List[Tuple[int, int, int]] = field(
+        default_factory=list, init=False, repr=False
+    )
     _key_versions: Dict[int, int] = field(default_factory=dict, init=False, repr=False)
     _rank_heap_initialized: bool = field(default=False, init=False, repr=False)
+    _frequency_key_sets: Dict[int, set[int]] = field(
+        default_factory=dict, init=False, repr=False
+    )
     _version: int = field(default=0, init=False, repr=False)
 
     @classmethod
@@ -143,7 +183,9 @@ class CSDTableStore:
     def _save_jsonl(self, path: Path) -> None:
         with path.open("w", encoding="utf-8") as f:
             if self.metadata:
-                f.write(json.dumps({"type": "metadata", "metadata": self.metadata}) + "\n")
+                f.write(
+                    json.dumps({"type": "metadata", "metadata": self.metadata}) + "\n"
+                )
             for record in self.to_records():
                 f.write(json.dumps(record) + "\n")
 
@@ -185,6 +227,38 @@ class CSDTableStore:
             heapq.heappush(self._rank_heap, item)
         return keys
 
+    def _lhs_totals(self) -> Counter[int]:
+        """Return recorded replacement counts grouped by rejected draft token."""
+        totals: Counter[int] = Counter()
+        for key, entry in self.entries.items():
+            lhs_token, _ = unpack_csd_pair(key)
+            totals[lhs_token] += entry.freq
+        return totals
+
+    def _lhs_distinct_replacements(self) -> Counter[int]:
+        """Return the number of observed replacement tokens per draft token."""
+        distinct: Counter[int] = Counter()
+        for key in self.entries:
+            lhs_token, _ = unpack_csd_pair(key)
+            distinct[lhs_token] += 1
+        return distinct
+
+    def pair_score(self, key: int, lhs_totals: Optional[Counter[int]] = None) -> float:
+        """Return count(draft, replacement)^2 / count(draft, *).
+
+        The score rewards pair support while penalizing rejected draft tokens
+        that map to many different replacements. It can also be read as
+        pair_frequency * pair_share, where pair_share is only an explanatory
+        term and is not exposed as a separate table-selection strategy.
+        """
+        entry = self.entries.get(key)
+        if entry is None:
+            return 0.0
+        lhs_token, _ = unpack_csd_pair(key)
+        totals = lhs_totals if lhs_totals is not None else self._lhs_totals()
+        lhs_total = totals[lhs_token]
+        return entry.freq * entry.freq / lhs_total if lhs_total > 0 else 0.0
+
     def add_pair(
         self,
         lhs_token: int,
@@ -193,10 +267,17 @@ class CSDTableStore:
         allow: bool = True,
     ) -> None:
         key = pack_csd_pair(lhs_token, rhs_token)
+        old_entry = self.entries.get(key)
         self.entries[key] = CSDEntry(
             freq=freq,
             allow=allow,
         )
+        old_freq = old_entry.freq if old_entry is not None else 0
+        for threshold, keys in self._frequency_key_sets.items():
+            if old_freq < threshold <= freq:
+                keys.add(key)
+            elif freq < threshold <= old_freq:
+                keys.discard(key)
         if self._rank_heap_initialized:
             self._touch_key(key)
         self._version += 1
@@ -207,10 +288,15 @@ class CSDTableStore:
             return
         for key, count in counts.items():
             entry = self.entries.get(key)
+            old_freq = entry.freq if entry is not None else 0
             if entry is None:
                 self.entries[key] = CSDEntry(freq=int(count), allow=True)
             else:
                 entry.freq += int(count)
+            new_freq = self.entries[key].freq
+            for threshold, keys in self._frequency_key_sets.items():
+                if old_freq < threshold <= new_freq:
+                    keys.add(key)
             if self._rank_heap_initialized:
                 self._touch_key(key)
         self._version += 1
@@ -220,38 +306,136 @@ class CSDTableStore:
         self,
         freq_threshold: int,
         top_keep: Optional[float] = None,
+        key_selection_strategy: str = CSD_KEY_SELECTION_FREQUENCY,
+        score_threshold: float = 0.0,
     ) -> List[int]:
-        cache_key = (int(freq_threshold), top_keep, self._version)
+        if key_selection_strategy not in CSD_KEY_SELECTION_STRATEGIES:
+            raise ValueError(
+                f"Unsupported CSD key selection strategy: {key_selection_strategy}"
+            )
+        cache_key = (
+            int(freq_threshold),
+            top_keep,
+            key_selection_strategy,
+            float(score_threshold),
+            self._version,
+        )
         cached_keys = self._filtered_keys_cache.get(cache_key)
         if cached_keys is not None:
             return list(cached_keys)
 
-        items = self.entries.items()
+        if (
+            key_selection_strategy == CSD_KEY_SELECTION_FREQUENCY
+            and (top_keep is None or top_keep <= 0)
+        ):
+            keys = self._frequency_key_sets.get(freq_threshold)
+            if keys is None:
+                keys = {
+                    key
+                    for key, entry in self.entries.items()
+                    if entry.freq >= freq_threshold
+                }
+                self._frequency_key_sets[freq_threshold] = keys
+            result = list(keys)
+            self._filtered_keys_cache[cache_key] = result
+            return list(result)
 
-        def sorted_filtered_keys() -> List[int]:
-            filtered_items = [
+        items = self.entries.items()
+        use_pair_score = (
+            key_selection_strategy == CSD_KEY_SELECTION_COUNT_SQUARED_OVER_TOTAL
+        )
+        use_above_uniform_share = (
+            key_selection_strategy == CSD_KEY_SELECTION_ABOVE_UNIFORM_SHARE
+        )
+        lhs_totals = (
+            self._lhs_totals() if use_pair_score or use_above_uniform_share else None
+        )
+        lhs_distinct = (
+            self._lhs_distinct_replacements() if use_above_uniform_share else None
+        )
+
+        def above_uniform_share(key: int, entry: CSDEntry) -> bool:
+            lhs_token, _ = unpack_csd_pair(key)
+            lhs_total = lhs_totals[lhs_token] if lhs_totals is not None else 0
+            num_replacements = (
+                lhs_distinct[lhs_token] if lhs_distinct is not None else 0
+            )
+            if lhs_total <= 0 or num_replacements <= 0:
+                return False
+            # Keep pairs whose observed replacement share is above the uniform
+            # baseline over that draft token's replacement choices:
+            # count(d, t) / count(d, *) > 1 / K(d).
+            return entry.freq * num_replacements > lhs_total
+
+        def above_uniform_rank(key: int, entry: CSDEntry) -> float:
+            lhs_token, _ = unpack_csd_pair(key)
+            lhs_total = lhs_totals[lhs_token] if lhs_totals is not None else 0
+            num_replacements = (
+                lhs_distinct[lhs_token] if lhs_distinct is not None else 0
+            )
+            if lhs_total <= 0 or num_replacements <= 0:
+                return 0.0
+            return entry.freq * num_replacements / lhs_total
+
+        def filtered_items() -> List[Tuple[int, CSDEntry]]:
+            return [
                 (key, entry)
                 for key, entry in items
-                if entry.freq >= freq_threshold
-            ]
-            return [
-                key
-                for key, entry in sorted(
-                    filtered_items,
-                    key=lambda item: (-item[1].freq, item[0]),
+                if (
+                    use_pair_score
+                    or use_above_uniform_share
+                    or entry.freq >= freq_threshold
+                )
+                and (
+                    not use_pair_score
+                    or self.pair_score(key, lhs_totals) >= score_threshold
+                )
+                and (
+                    not use_above_uniform_share
+                    or (
+                        entry.freq >= freq_threshold and above_uniform_share(key, entry)
+                    )
                 )
             ]
 
+        def sorted_filtered_keys() -> List[int]:
+            # Ranking is only needed when top_keep truncates the candidate set.
+            # Without top_keep, the hash table only needs membership, so the
+            # unsorted filtered key set is equivalent and avoids a full sort.
+            if use_pair_score:
+                sort_key = lambda item: (
+                    -self.pair_score(item[0], lhs_totals),
+                    -item[1].freq,
+                    item[0],
+                )
+            elif use_above_uniform_share:
+                sort_key = lambda item: (
+                    -above_uniform_rank(item[0], item[1]),
+                    -item[1].freq,
+                    item[0],
+                )
+            else:
+                sort_key = lambda item: (-item[1].freq, item[0])
+            return [key for key, entry in sorted(filtered_items(), key=sort_key)]
+
         if top_keep is None or top_keep <= 0:
-            keys = sorted_filtered_keys()
+            keys = [key for key, entry in filtered_items()]
         else:
             if top_keep <= 1:
                 keep_count = max(1, math.ceil(len(self.entries) * top_keep))
             else:
                 keep_count = max(1, math.floor(top_keep))
-            if keep_count * 2 >= len(self.entries):
+            if (
+                use_pair_score
+                or use_above_uniform_share
+                or keep_count * 2 >= len(self.entries)
+            ):
                 sorted_keys = sorted_filtered_keys()
-                keys = sorted_keys if len(sorted_keys) <= keep_count else sorted_keys[:keep_count]
+                keys = (
+                    sorted_keys
+                    if len(sorted_keys) <= keep_count
+                    else sorted_keys[:keep_count]
+                )
             else:
                 keys = self._top_filtered_keys_from_heap(freq_threshold, keep_count)
 
@@ -265,9 +449,16 @@ class CSDTableStore:
         max_probe: int = CSD_DEFAULT_MAX_PROBE,
         load_factor: float = CSD_DEFAULT_LOAD_FACTOR,
         top_keep: Optional[float] = None,
+        key_selection_strategy: str = CSD_KEY_SELECTION_FREQUENCY,
+        score_threshold: float = 0.0,
     ) -> "CSDHashTable":
         return build_csd_hash_table(
-            self.filtered_keys(freq_threshold, top_keep=top_keep),
+            self.filtered_keys(
+                freq_threshold,
+                top_keep=top_keep,
+                key_selection_strategy=key_selection_strategy,
+                score_threshold=score_threshold,
+            ),
             device=device,
             max_probe=max_probe,
             load_factor=load_factor,
@@ -337,18 +528,72 @@ class CSDHashTable:
 
 @dataclass
 class CSDHashTablePayload:
-    keys: List[int]
+    keys: List[int] | torch.Tensor
     num_entries: int
     capacity: int
     max_probe: int
+    store_entries: Optional[int] = None
+
+
+def build_csd_rebuild_payload_native(
+    native_builder: Any,
+    pairs: torch.Tensor,
+    max_probe: int,
+    load_factor: float,
+) -> CSDHashTablePayload:
+    with _csd_profile_range("csd_rebuild_native:update_and_build"):
+        hash_keys, num_entries, store_entries = native_builder.update_and_build(
+            pairs,
+            max_probe,
+            load_factor,
+        )
+    return CSDHashTablePayload(
+        keys=hash_keys,
+        num_entries=num_entries,
+        capacity=hash_keys.numel(),
+        max_probe=max_probe,
+        store_entries=store_entries,
+    )
+
+
+def build_csd_rebuild_payload_from_counts(
+    table_store: CSDTableStore,
+    counts: Counter[int],
+    freq_threshold: int,
+    max_probe: int = CSD_DEFAULT_MAX_PROBE,
+    load_factor: float = CSD_DEFAULT_LOAD_FACTOR,
+    top_keep: Optional[float] = None,
+    key_selection_strategy: str = CSD_KEY_SELECTION_FREQUENCY,
+    score_threshold: float = 0.0,
+) -> CSDHashTablePayload:
+    with _csd_profile_range("csd_rebuild_start:merge_counts"):
+        table_store.merge_counts(counts)
+    with _csd_profile_range("csd_rebuild_start:filtered_keys"):
+        keys = table_store.filtered_keys(
+            freq_threshold,
+            top_keep=top_keep,
+            key_selection_strategy=key_selection_strategy,
+            score_threshold=score_threshold,
+        )
+    with _csd_profile_range("csd_rebuild_start:build_payload"):
+        return build_csd_hash_table_payload(
+            keys,
+            max_probe=max_probe,
+            load_factor=load_factor,
+        )
 
 
 def materialize_csd_hash_table_payload(
     payload: CSDHashTablePayload,
     device: torch.device | str,
 ) -> CSDHashTable:
+    keys = payload.keys
+    if isinstance(keys, torch.Tensor):
+        keys = keys.to(device=device, dtype=torch.int64)
+    else:
+        keys = torch.tensor(keys, dtype=torch.int64, device=device)
     return CSDHashTable(
-        keys=torch.tensor(payload.keys, dtype=torch.int64, device=device),
+        keys=keys,
         num_entries=payload.num_entries,
         capacity=payload.capacity,
         max_probe=payload.max_probe,
@@ -364,6 +609,29 @@ def build_csd_hash_table_payload(
         raise ValueError("CSD max_probe must be at least 1")
     if not 0 < load_factor <= 1:
         raise ValueError("CSD load_factor must be in the range (0, 1]")
+
+    native_builder = getattr(
+        getattr(torch.ops, "sgl_kernel", None),
+        "csd_build_hash_table_cpu",
+        None,
+    )
+    if native_builder is not None:
+        key_tensor = torch.as_tensor(
+            keys if isinstance(keys, (list, torch.Tensor)) else list(keys),
+            dtype=torch.int64,
+            device="cpu",
+        )
+        hash_keys, num_entries = native_builder.default(
+            key_tensor,
+            max_probe,
+            load_factor,
+        )
+        return CSDHashTablePayload(
+            keys=hash_keys,
+            num_entries=num_entries,
+            capacity=hash_keys.numel(),
+            max_probe=max_probe,
+        )
 
     key_list = [int(key) for key in keys]
     if not key_list:
@@ -486,6 +754,14 @@ class CSDDeltaBuffer:
         self.reset()
         return Counter(int(pair) for pair in pairs if int(pair) >= 0)
 
+    def drain_to_cpu_tensor(self) -> torch.Tensor:
+        count = min(int(self.counter.item()), self.capacity)
+        if count == 0:
+            return torch.empty((0,), dtype=torch.int64, device="cpu")
+        pairs = self.pairs[:count].detach().to(device="cpu", dtype=torch.int64)
+        self.reset()
+        return pairs
+
 
 @dataclass
 class CSDRuntime:
@@ -501,6 +777,12 @@ class CSDRuntime:
     delta_save_path: Optional[str] = None
     online_rebuild_enabled: bool = False
     rebuild_future: Optional[Future] = None
+    rebuild_started_ct: int = 0
+    rebuild_applied_ct: int = 0
+    rebuild_started_at: Optional[float] = None
+    rebuild_lifecycle_wall_sec: float = 0.0
+    native_table_builder: Optional[Any] = None
+    native_table_store_entries: Optional[int] = None
     rebuild_check_interval: int = CSD_DEFAULT_REBUILD_CHECK_INTERVAL
     rebuild_check_countdown: int = 0
 
@@ -533,6 +815,8 @@ class CSDRuntime:
             freq_threshold=server_args.speculative_csd_freq_threshold,
             max_probe=max_probe,
             load_factor=load_factor,
+            key_selection_strategy=server_args.speculative_csd_key_selection_strategy,
+            score_threshold=server_args.speculative_csd_score_threshold,
         )
         delta_buffer = None
         if server_args.speculative_csd_dynamic_update:
@@ -540,6 +824,36 @@ class CSDRuntime:
                 device=device,
                 capacity=server_args.speculative_csd_delta_capacity,
             )
+
+        native_table_builder = None
+        use_native_builder = (
+            server_args.speculative_csd_dynamic_update
+            and server_args.speculative_csd_key_selection_strategy
+            == CSD_KEY_SELECTION_FREQUENCY
+            and (
+                server_args.speculative_csd_rebuild_top_keep is None
+                or server_args.speculative_csd_rebuild_top_keep <= 0
+            )
+        )
+        if use_native_builder:
+            try:
+                builder_class = torch.classes.sgl_kernel.CSDTableBuilder
+            except RuntimeError:
+                builder_class = None
+            if builder_class is not None:
+                initial_keys = torch.tensor(
+                    list(table_store.entries), dtype=torch.int64, device="cpu"
+                )
+                initial_freqs = torch.tensor(
+                    [entry.freq for entry in table_store.entries.values()],
+                    dtype=torch.int64,
+                    device="cpu",
+                )
+                native_table_builder = builder_class(
+                    initial_keys,
+                    initial_freqs,
+                    server_args.speculative_csd_freq_threshold,
+                )
 
         return cls(
             enabled=True,
@@ -555,11 +869,41 @@ class CSDRuntime:
                 server_args.speculative_csd_dynamic_update
                 and server_args.speculative_csd_table_path is not None
             ),
+            native_table_builder=native_table_builder,
+            native_table_store_entries=(
+                len(table_store.entries)
+                if native_table_builder is not None
+                else None
+            ),
         )
 
     @property
     def has_table(self) -> bool:
         return self.table.has_entries
+
+    def metrics_snapshot(self) -> Dict[str, int | float]:
+        snapshot = self.metrics.snapshot()
+        snapshot.update(
+            {
+                "csd_table_num_entries": int(self.table.num_entries),
+                "csd_table_capacity": int(self.table.capacity),
+                "csd_table_max_probe": int(self.table.max_probe),
+                "csd_table_store_entries": int(
+                    self.native_table_store_entries
+                    if self.native_table_store_entries is not None
+                    else len(self.table_store.entries)
+                ),
+                "csd_rebuild_started_ct": int(self.rebuild_started_ct),
+                "csd_rebuild_applied_ct": int(self.rebuild_applied_ct),
+                "csd_rebuild_inflight": int(self.rebuild_future is not None),
+                "csd_rebuild_lifecycle_wall_sec": float(
+                    self.rebuild_lifecycle_wall_sec
+                ),
+            }
+        )
+        if self.delta_buffer is not None:
+            snapshot["csd_delta_buffer_capacity"] = int(self.delta_buffer.capacity)
+        return snapshot
 
     def flush_delta(self) -> Counter[int]:
         if self.delta_buffer is None:
@@ -579,6 +923,18 @@ class CSDRuntime:
         delta_store.save(save_path)
 
     def save_table(self, path: str) -> None:
+        if self.native_table_builder is not None:
+            if self.delta_buffer is not None:
+                pairs = self.delta_buffer.drain_to_cpu_tensor()
+                if pairs.numel() > 0:
+                    self.native_table_builder.update(pairs)
+            keys, freqs = self.native_table_builder.snapshot()
+            self.table_store.entries = {
+                int(key): CSDEntry(freq=int(freq), allow=True)
+                for key, freq in zip(keys.tolist(), freqs.tolist())
+            }
+            self.table_store.save(path)
+            return
         self.flush_delta()
         self.table_store.merge_counts(self.delta_counts)
         self.delta_counts.clear()
@@ -603,9 +959,22 @@ class CSDRuntime:
     ) -> bool:
         if self.rebuild_future is None or not self.rebuild_future.done():
             return False
-        payload = self.rebuild_future.result()
+        with _csd_profile_range("csd_rebuild_apply:future_result"):
+            payload = self.rebuild_future.result()
         self.rebuild_future = None
-        self.table = materialize_csd_hash_table_payload(payload, device)
+        with _csd_profile_range(
+            "csd_rebuild_apply:materialize_and_swap "
+            f"entries={payload.num_entries} capacity={payload.capacity}"
+        ):
+            self.table = materialize_csd_hash_table_payload(payload, device)
+        if payload.store_entries is not None:
+            self.native_table_store_entries = payload.store_entries
+        self.rebuild_applied_ct += 1
+        if self.rebuild_started_at is not None:
+            self.rebuild_lifecycle_wall_sec += (
+                time.perf_counter() - self.rebuild_started_at
+            )
+            self.rebuild_started_at = None
         return True
 
     def maybe_start_async_rebuild(
@@ -615,6 +984,8 @@ class CSDRuntime:
         max_probe: int = CSD_DEFAULT_MAX_PROBE,
         load_factor: float = CSD_DEFAULT_LOAD_FACTOR,
         top_keep: Optional[float] = None,
+        key_selection_strategy: str = CSD_KEY_SELECTION_FREQUENCY,
+        score_threshold: float = 0.0,
     ) -> bool:
         if not self.online_rebuild_enabled or self.delta_buffer is None:
             return False
@@ -622,26 +993,48 @@ class CSDRuntime:
             return False
         if self.rebuild_future is not None and not self.rebuild_future.done():
             return False
-        buffered_pair_count = min(int(self.delta_buffer.counter.item()), self.delta_buffer.capacity)
-        effective_rebuild_threshold = min(rebuild_threshold, self.delta_buffer.capacity)
-        if buffered_pair_count < effective_rebuild_threshold:
-            return False
+        with _csd_profile_range("csd_rebuild_start:counter_threshold_check"):
+            buffered_pair_count = min(
+                int(self.delta_buffer.counter.item()), self.delta_buffer.capacity
+            )
+            effective_rebuild_threshold = min(
+                rebuild_threshold, self.delta_buffer.capacity
+            )
+            if buffered_pair_count < effective_rebuild_threshold:
+                return False
 
-        counts = self.flush_delta()
-        if not counts:
+        with _csd_profile_range("csd_rebuild_start:flush_delta"):
+            if self.native_table_builder is not None:
+                rebuild_input = self.delta_buffer.drain_to_cpu_tensor()
+            else:
+                rebuild_input = self.flush_delta()
+        if len(rebuild_input) == 0:
             return False
-        self.table_store.merge_counts(counts)
-        self.delta_counts.clear()
-        keys = self.table_store.filtered_keys(
-            freq_threshold,
-            top_keep=top_keep,
-        )
-        self.rebuild_future = _CSD_REBUILD_EXECUTOR.submit(
-            build_csd_hash_table_payload,
-            keys,
-            max_probe,
-            load_factor,
-        )
+        if self.native_table_builder is None:
+            self.delta_counts.clear()
+        with _csd_profile_range("csd_rebuild_start:executor_submit"):
+            self.rebuild_started_at = time.perf_counter()
+            if self.native_table_builder is not None:
+                self.rebuild_future = _CSD_REBUILD_EXECUTOR.submit(
+                    build_csd_rebuild_payload_native,
+                    self.native_table_builder,
+                    rebuild_input,
+                    max_probe,
+                    load_factor,
+                )
+            else:
+                self.rebuild_future = _CSD_REBUILD_EXECUTOR.submit(
+                    build_csd_rebuild_payload_from_counts,
+                    self.table_store,
+                    rebuild_input,
+                    freq_threshold,
+                    max_probe,
+                    load_factor,
+                    top_keep,
+                    key_selection_strategy,
+                    score_threshold,
+                )
+            self.rebuild_started_ct += 1
         return True
 
     def rebuild_table(
@@ -651,6 +1044,8 @@ class CSDRuntime:
         max_probe: int = CSD_DEFAULT_MAX_PROBE,
         load_factor: float = CSD_DEFAULT_LOAD_FACTOR,
         top_keep: Optional[float] = None,
+        key_selection_strategy: str = CSD_KEY_SELECTION_FREQUENCY,
+        score_threshold: float = 0.0,
     ) -> None:
         self.flush_delta()
         self.table_store.merge_counts(self.delta_counts)
@@ -662,4 +1057,6 @@ class CSDRuntime:
             max_probe=max_probe,
             load_factor=load_factor,
             top_keep=top_keep,
+            key_selection_strategy=key_selection_strategy,
+            score_threshold=score_threshold,
         )

@@ -1,5 +1,7 @@
 import logging
+import os
 import time
+from contextlib import nullcontext
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
@@ -75,6 +77,17 @@ if is_cuda():
     from sgl_kernel import segment_packbits  # noqa: F401
 
 logger = logging.getLogger(__name__)
+
+
+def _csd_profile_range(name: str):
+    if os.environ.get("SGLANG_CSD_PROFILE_ANNOTATIONS", "").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        return torch.profiler.record_function(name)
+    return nullcontext()
 
 
 class EAGLEWorker(TpModelWorker):
@@ -314,25 +327,27 @@ class EAGLEWorker(TpModelWorker):
                 can_run_cuda_graph=can_run_cuda_graph,
             )
         else:
-            with self.draft_tp_context(
-                self.draft_model_runner.tp_group
-            ), speculative_moe_backend_context(), speculative_moe_a2a_backend_context():
-                spec_info = self.draft(batch)
+            with _csd_profile_range("csd_worker:draft_total"):
+                with self.draft_tp_context(
+                    self.draft_model_runner.tp_group
+                ), speculative_moe_backend_context(), speculative_moe_a2a_backend_context():
+                    spec_info = self.draft(batch)
             logits_output, verify_output, model_worker_batch, can_run_cuda_graph = (
                 self.verify(batch, spec_info)
             )
 
-            with self.draft_tp_context(
-                self.draft_model_runner.tp_group
-            ), speculative_moe_backend_context(), speculative_moe_a2a_backend_context():
-                # NOTE: We should use `check_forward_draft_extend_after_decode`
-                # when DP attention is enabled, but it is slow. Skip it for now.
-                if (
-                    self.server_args.enable_dp_attention
-                    or batch.spec_info.verified_id.shape[0] > 0
-                ):
-                    # decode is not finished
-                    self.forward_draft_extend_after_decode(batch)
+            with _csd_profile_range("csd_worker:draft_extend_after_decode_total"):
+                with self.draft_tp_context(
+                    self.draft_model_runner.tp_group
+                ), speculative_moe_backend_context(), speculative_moe_a2a_backend_context():
+                    # NOTE: We should use `check_forward_draft_extend_after_decode`
+                    # when DP attention is enabled, but it is slow. Skip it for now.
+                    if (
+                        self.server_args.enable_dp_attention
+                        or batch.spec_info.verified_id.shape[0] > 0
+                    ):
+                        # decode is not finished
+                        self.forward_draft_extend_after_decode(batch)
 
             return GenerationBatchResult(
                 logits_output=logits_output,
@@ -563,9 +578,10 @@ class EAGLEWorker(TpModelWorker):
             forward_batch
         )
         if can_cuda_graph:
-            parent_list, top_scores_index, draft_tokens = self.cuda_graph_runner.replay(
-                forward_batch
-            )
+            with _csd_profile_range("csd_worker:draft_cuda_graph_replay"):
+                parent_list, top_scores_index, draft_tokens = self.cuda_graph_runner.replay(
+                    forward_batch
+                )
         else:
             forward_batch.can_run_dp_cuda_graph = False
             if (
@@ -575,9 +591,10 @@ class EAGLEWorker(TpModelWorker):
                 # Skip attention backend init for idle mode or 1-step draft
                 self.draft_attn_backend.init_forward_metadata(forward_batch)
             # Run forward steps
-            parent_list, top_scores_index, draft_tokens = self.draft_forward(
-                forward_batch
-            )
+            with _csd_profile_range("csd_worker:draft_forward_total"):
+                parent_list, top_scores_index, draft_tokens = self.draft_forward(
+                    forward_batch
+                )
 
         if batch.forward_mode.is_idle():
             return EagleVerifyInput.create_idle_input(
@@ -652,9 +669,10 @@ class EAGLEWorker(TpModelWorker):
         # Forward multiple steps
         scores = None
         for i in range(self.speculative_num_steps):
-            input_ids, hidden_states, scores, tree_info = select_top_k_tokens(
-                i, topk_p, topk_index, hidden_states, scores, self.topk
-            )
+            with _csd_profile_range(f"csd_draft:select_top_k_tokens_step_{i}"):
+                input_ids, hidden_states, scores, tree_info = select_top_k_tokens(
+                    i, topk_p, topk_index, hidden_states, scores, self.topk
+                )
             score_list.append(tree_info[0])
             token_list.append(tree_info[1])
             parents_list.append(tree_info[2])
@@ -679,12 +697,14 @@ class EAGLEWorker(TpModelWorker):
             spec_info.hidden_states = hidden_states
 
             # Run forward
-            logits_output = self.draft_model_runner.forward(
-                forward_batch, skip_attn_backend_init=True
-            ).logits_output
+            with _csd_profile_range(f"csd_draft:model_forward_step_{i}"):
+                logits_output = self.draft_model_runner.forward(
+                    forward_batch, skip_attn_backend_init=True
+                ).logits_output
             maybe_detect_nan(logits_output.next_token_logits, f"draft_forward step {i}")
-            probs = torch.softmax(logits_output.next_token_logits, dim=-1)
-            topk_p, topk_index = fast_topk(probs, self.topk, dim=-1)
+            with _csd_profile_range(f"csd_draft:softmax_topk_step_{i}"):
+                probs = torch.softmax(logits_output.next_token_logits, dim=-1)
+                topk_p, topk_index = fast_topk(probs, self.topk, dim=-1)
             maybe_detect_oob(
                 topk_index,
                 0,
@@ -731,10 +751,11 @@ class EAGLEWorker(TpModelWorker):
         )
         batch.spec_info = spec_info
 
-        model_worker_batch = batch.get_model_worker_batch(
-            seq_lens_cpu_cache=spec_info.seq_lens_cpu
-        )
-        assert model_worker_batch.capture_hidden_mode == spec_info.capture_hidden_mode
+        with _csd_profile_range("csd_worker:prepare_verify_model_worker_batch"):
+            model_worker_batch = batch.get_model_worker_batch(
+                seq_lens_cpu_cache=spec_info.seq_lens_cpu
+            )
+            assert model_worker_batch.capture_hidden_mode == spec_info.capture_hidden_mode
 
         if batch.has_grammar:
             retrieve_next_token_cpu = spec_info.retrive_next_token.cpu()
@@ -744,9 +765,10 @@ class EAGLEWorker(TpModelWorker):
             ).cpu()
 
         # Forward
-        batch_result = self.target_worker.forward_batch_generation(
-            model_worker_batch, is_verify=True
-        )
+        with _csd_profile_range("csd_worker:target_forward_verify"):
+            batch_result = self.target_worker.forward_batch_generation(
+                model_worker_batch, is_verify=True
+            )
         logits_output, can_run_cuda_graph = (
             batch_result.logits_output,
             batch_result.can_run_cuda_graph,
@@ -774,48 +796,65 @@ class EAGLEWorker(TpModelWorker):
 
         maybe_detect_nan(logits_output.next_token_logits, "verify: target model logits")
 
-        self.csd_runtime.maybe_apply_async_rebuild(device=self.device)
+        with _csd_profile_range("csd_worker:maybe_apply_async_rebuild"):
+            rebuild_applied = self.csd_runtime.maybe_apply_async_rebuild(
+                device=self.device
+            )
+            if rebuild_applied:
+                with _csd_profile_range("csd_worker:async_rebuild_applied"):
+                    pass
 
         spec_info.hidden_states = logits_output.hidden_states
-        res: EagleVerifyOutput = spec_info.verify(
-            batch,
-            logits_output,
-            self.token_to_kv_pool_allocator,
-            self.page_size,
-            vocab_mask,
-            csd_runtime=self.csd_runtime,
-        )
-        if self.csd_runtime.should_check_async_rebuild():
-            self.csd_runtime.maybe_start_async_rebuild(
-                freq_threshold=self.server_args.speculative_csd_freq_threshold,
-                rebuild_threshold=self.server_args.speculative_csd_rebuild_threshold,
-                top_keep=self.server_args.speculative_csd_rebuild_top_keep,
+        with _csd_profile_range("csd_worker:verify_total"):
+            res: EagleVerifyOutput = spec_info.verify(
+                batch,
+                logits_output,
+                self.token_to_kv_pool_allocator,
+                self.page_size,
+                vocab_mask,
+                csd_runtime=self.csd_runtime,
             )
+        with _csd_profile_range("csd_worker:maybe_start_async_rebuild_total"):
+            if self.csd_runtime.should_check_async_rebuild():
+                rebuild_started = self.csd_runtime.maybe_start_async_rebuild(
+                    freq_threshold=self.server_args.speculative_csd_freq_threshold,
+                    rebuild_threshold=self.server_args.speculative_csd_rebuild_threshold,
+                    top_keep=self.server_args.speculative_csd_rebuild_top_keep,
+                    key_selection_strategy=self.server_args.speculative_csd_key_selection_strategy,
+                    score_threshold=self.server_args.speculative_csd_score_threshold,
+                )
+                if rebuild_started:
+                    with _csd_profile_range("csd_worker:async_rebuild_started"):
+                        pass
 
         # Post process based on verified outputs.
         # Pick indices that we care (accepted)
-        logits_output.next_token_logits = logits_output.next_token_logits[
-            res.accepted_indices
-        ]
-        logits_output.hidden_states = logits_output.hidden_states[res.accepted_indices]
+        with _csd_profile_range("csd_worker:post_verify_gather_logits_hidden"):
+            logits_output.next_token_logits = logits_output.next_token_logits[
+                res.accepted_indices
+            ]
+            logits_output.hidden_states = logits_output.hidden_states[res.accepted_indices]
 
         if (
             self.target_worker.model_runner.hybrid_gdn_config is not None
             or self.target_worker.model_runner.mamba2_config is not None
             or self.target_worker.model_runner.hybrid_lightning_config is not None
         ):
-            self._mamba_verify_update(
-                batch, res, logits_output, spec_info, seq_lens_pre_verify
-            )
+            with _csd_profile_range("csd_worker:post_verify_mamba_update"):
+                self._mamba_verify_update(
+                    batch, res, logits_output, spec_info, seq_lens_pre_verify
+                )
 
         if batch.return_logprob:
-            add_output_logprobs_for_spec_v1(batch, res, logits_output)
+            with _csd_profile_range("csd_worker:post_verify_add_logprobs"):
+                add_output_logprobs_for_spec_v1(batch, res, logits_output)
 
         # Prepare the batch for the next draft forwards.
-        batch.forward_mode = (
-            ForwardMode.DECODE if not batch.forward_mode.is_idle() else ForwardMode.IDLE
-        )
-        batch.spec_info = res.draft_input
+        with _csd_profile_range("csd_worker:post_verify_set_next_draft"):
+            batch.forward_mode = (
+                ForwardMode.DECODE if not batch.forward_mode.is_idle() else ForwardMode.IDLE
+            )
+            batch.spec_info = res.draft_input
 
         return logits_output, res, model_worker_batch, can_run_cuda_graph
 

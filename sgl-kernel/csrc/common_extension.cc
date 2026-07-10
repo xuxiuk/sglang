@@ -251,7 +251,8 @@ TORCH_LIBRARY_FRAGMENT(sgl_kernel, m) {
       "Tensor target_logits, Tensor csd_table_keys, Tensor csd_delta_pairs, Tensor csd_delta_counter, "
       "Tensor csd_lookup_hit_ct, Tensor csd_forced_accept_ct, Tensor csd_delta_pair_ct, "
       "int csd_table_capacity, int csd_table_max_probe, int csd_delta_capacity, bool csd_enabled, "
-      "bool csd_dynamic_update, bool csd_dynamic_update_ignore_prob_ratio, bool csd_force_accept_disabled, float csd_logit_margin, "
+      "bool csd_dynamic_update, bool csd_dynamic_update_ignore_prob_ratio, bool csd_force_accept_disabled, "
+      "float csd_logit_margin, float csd_force_accept_entropy_threshold, "
       "float threshold_single, float threshold_acc, "
       "bool deterministic) -> ()");
   m.impl("tree_speculative_sampling_target_only", torch::kCUDA, &tree_speculative_sampling_target_only);

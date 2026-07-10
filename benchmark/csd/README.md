@@ -147,10 +147,60 @@ CSD 在 verify kernel 中完成：
 
 - `--speculative-csd-freq-threshold`
   - 加载或 rebuild table 时的 pair 频次过滤阈值。
-  - 只有累计频次达到该阈值的 pair 会进入 hash table。
+  - `frequency` 和 `above_uniform_share` 策略会把它作为最小累计频次门槛。
+  - `count_squared_over_total` 的最小样本数语义仍在评估中；当前实现主要由 score threshold / top-keep 控制。
+
+- `--speculative-csd-key-selection-strategy`
+  - CSD hash key 的选择和排序策略。
+  - `frequency`：保持旧行为，按 `count(draft, replacement)` 排序。
+  - `count_squared_over_total`：按以下分数排序：
+
+```text
+score(draft, replacement)
+  = count(draft, replacement)^2 / count(draft, *)
+```
+
+  - 其中 `count(draft, *)` 是该 rejected draft token 对应的所有 replacement 次数之和。
+  - 这个分数也等于 `pair_frequency * pair_share`。`pair_share` 只是公式解释：
+
+```text
+pair_share
+  = count(draft, replacement) / count(draft, *)
+```
+
+  - share 不作为独立策略或参数暴露。
+
+- `--speculative-csd-score-threshold`
+  - 使用 `count_squared_over_total` 策略时的最低 score。
+  - 当前实现下该策略不再额外套用 `--speculative-csd-freq-threshold`，因此需要用 score threshold 和可选 top-keep 控制 table 大小与低样本 pair。
+
+当前 gated ratio=0.3 RedPajama calibration table 的 score sweep 阈值：
+
+| 目标保留比例 | score 阈值 | 因边界并列而实际保留比例 |
+| --- | --- | --- |
+| 3% | `1.0` | 4.60% |
+| 5% | `0.571428571429` | 5.05% |
+| 10% | `0.333333333333` | 11.13% |
+
+运行该 sweep：
+
+```bash
+bash benchmark/csd/eval/run_lighteval_csd_key_score_sweep.sh
+```
+
+该脚本使用 `csd_ratio_table_static`，并设置 `CSD_FREQ_THRESHOLD=1` 以保持参数显式；
+在当前 `count_squared_over_total` 实现下，score 策略本身不受该 frequency 门槛影响。由于大量 key 的 score 相同，单纯使用
+阈值无法精确保留 3% 或 10%；如需严格数量限制，应额外使用 top-keep。
 
 - `--speculative-csd-prob-ratio`
   - CSD force accept 的 logits 条件参数。
+
+- `--speculative-csd-force-accept-entropy-threshold`
+  - 可选的 CSD force-accept entropy gate。
+  - 默认 `-1` 表示关闭，保持旧行为。
+  - 开启后，只有当前 target distribution entropy 不超过该阈值时，CSD 才会 force accept；已有的 prob-ratio / logits gate 仍然必须通过。
+  - `sglang-csd-trace` 中最终选择的 p30 配置阈值是 `1.3415851593017578`。
+  - benchmark 脚本可用 `CSD_FORCE_ACCEPT_ENTROPY_THRESHOLD=1.3415851593017578` 传入。
 
 - `--speculative-csd-delta-save-path`
   - 动态收集的 delta pair 保存路径。

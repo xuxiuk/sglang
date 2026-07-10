@@ -194,6 +194,40 @@ template <
     BlockScanAlgorithm SCAN_ALGORITHM,
     BlockReduceAlgorithm REDUCE_ALGORITHM,
     uint32_t VEC_SIZE,
+    typename DType>
+__device__ __forceinline__ DType CsdComputeTargetEntropy(
+    DType* target_probs,
+    uint32_t cur_prob_offset,
+    uint32_t d,
+    SamplingTempStorage<BLOCK_THREADS, SCAN_ALGORITHM, REDUCE_ALGORITHM>& temp_storage) {
+  const uint32_t tx = threadIdx.x;
+  DType thread_entropy = 0;
+  vec_t<DType, VEC_SIZE> q_vec;
+
+  for (uint32_t i = 0; i < ceil_div(d, BLOCK_THREADS * VEC_SIZE); ++i) {
+    q_vec.fill(DType(0));
+    if ((i * BLOCK_THREADS + tx) * VEC_SIZE < d) {
+      q_vec.load(target_probs + cur_prob_offset + i * BLOCK_THREADS * VEC_SIZE + tx * VEC_SIZE);
+    }
+#pragma unroll
+    for (uint32_t j = 0; j < VEC_SIZE; ++j) {
+      if (q_vec[j] > DType(0)) {
+        thread_entropy -= q_vec[j] * logf(q_vec[j]);
+      }
+    }
+  }
+
+  DType block_entropy = BlockReduce<DType, BLOCK_THREADS, REDUCE_ALGORITHM>(temp_storage.block_prim.reduce)
+                            .Sum(thread_entropy);
+  __syncthreads();
+  return block_entropy;
+}
+
+template <
+    uint32_t BLOCK_THREADS,
+    BlockScanAlgorithm SCAN_ALGORITHM,
+    BlockReduceAlgorithm REDUCE_ALGORITHM,
+    uint32_t VEC_SIZE,
     bool DETERMINISTIC,
     bool CSD_ENABLED,
     bool CSD_DYNAMIC_UPDATE,
@@ -232,7 +266,8 @@ __global__ void TreeSpeculativeSamplingTargetOnly(
     bool csd_dynamic_update,
     bool csd_dynamic_update_ignore_prob_ratio,
     bool csd_force_accept_disabled,
-    DType csd_logit_margin) {
+    DType csd_logit_margin,
+    DType csd_force_accept_entropy_threshold) {
   const uint32_t bx = blockIdx.x, tx = threadIdx.x;
 
   extern __shared__ __align__(alignof(SamplingTempStorage<BLOCK_THREADS, SCAN_ALGORITHM, REDUCE_ALGORITHM>))
@@ -302,13 +337,32 @@ __global__ void TreeSpeculativeSamplingTargetOnly(
               CsdAtomicAddI64(csd_lookup_hit_ct, 1ULL);
             }
             csd_force_accept = table_hit && csd_logit_pass && !csd_force_accept_disabled;
-            if (csd_force_accept) {
-              CsdAtomicAddI64(csd_forced_accept_ct, 1ULL);
+            if (csd_force_accept && csd_force_accept_entropy_threshold >= DType(0)) {
+              temp_storage.block_aggregate.value = DType(2);
+            } else {
+              temp_storage.block_aggregate.value = csd_force_accept ? DType(1) : DType(0);
             }
-            temp_storage.block_aggregate.value = csd_force_accept ? DType(1) : DType(0);
           }
           __syncthreads();
+          bool should_check_csd_entropy = temp_storage.block_aggregate.value == DType(2);
+          __syncthreads();
+          if (should_check_csd_entropy) {
+            DType target_entropy = CsdComputeTargetEntropy<
+                BLOCK_THREADS,
+                SCAN_ALGORITHM,
+                REDUCE_ALGORITHM,
+                VEC_SIZE,
+                DType>(target_probs, cur_prob_offset, d, temp_storage);
+            if (tx == 0) {
+              temp_storage.block_aggregate.value =
+                  target_entropy <= csd_force_accept_entropy_threshold ? DType(1) : DType(0);
+            }
+            __syncthreads();
+          }
           csd_force_accept = temp_storage.block_aggregate.value != DType(0);
+          if (tx == 0 && csd_force_accept) {
+            CsdAtomicAddI64(csd_forced_accept_ct, 1ULL);
+          }
           __syncthreads();
         }
       }
@@ -398,6 +452,7 @@ cudaError_t LaunchTreeSpeculativeSamplingTargetOnly(
     bool csd_dynamic_update_ignore_prob_ratio,
     bool csd_force_accept_disabled,
     DType csd_logit_margin,
+    DType csd_force_accept_entropy_threshold,
     cudaStream_t stream) {
   const uint32_t vec_size = std::gcd(16 / sizeof(DType), d);
   const uint32_t smem_size = sizeof(SamplingTempStorage<BLOCK_THREADS, SCAN_ALGO, REDUCE_ALGO>);
@@ -436,7 +491,8 @@ cudaError_t LaunchTreeSpeculativeSamplingTargetOnly(
       &csd_dynamic_update,
       &csd_dynamic_update_ignore_prob_ratio,
       &csd_force_accept_disabled,
-      &csd_logit_margin};
+      &csd_logit_margin,
+      &csd_force_accept_entropy_threshold};
   DISPATCH_ALIGNED_VEC_SIZE(
       vec_size, VEC_SIZE, {DISPATCH_DETERMINISTIC(deterministic, DETERMINISTIC, {
         auto kernel = TreeSpeculativeSamplingTargetOnly<
@@ -491,6 +547,7 @@ cudaError_t TreeSpeculativeSamplingTargetOnly(
     bool csd_dynamic_update_ignore_prob_ratio = false,
     bool csd_force_accept_disabled = false,
     DType csd_logit_margin = -4.605170185988091f,
+    DType csd_force_accept_entropy_threshold = -1.0f,
     cudaStream_t stream = 0) {
   if (csd_enabled && csd_dynamic_update) {
     return LaunchTreeSpeculativeSamplingTargetOnly<512, true, true>(
@@ -527,6 +584,7 @@ cudaError_t TreeSpeculativeSamplingTargetOnly(
         csd_dynamic_update_ignore_prob_ratio,
         csd_force_accept_disabled,
         csd_logit_margin,
+        csd_force_accept_entropy_threshold,
         stream);
   }
   if (csd_enabled) {
@@ -564,6 +622,7 @@ cudaError_t TreeSpeculativeSamplingTargetOnly(
         csd_dynamic_update_ignore_prob_ratio,
         csd_force_accept_disabled,
         csd_logit_margin,
+        csd_force_accept_entropy_threshold,
         stream);
   }
   if (csd_dynamic_update) {
@@ -601,6 +660,7 @@ cudaError_t TreeSpeculativeSamplingTargetOnly(
         csd_dynamic_update_ignore_prob_ratio,
         csd_force_accept_disabled,
         csd_logit_margin,
+        csd_force_accept_entropy_threshold,
         stream);
   }
   return LaunchTreeSpeculativeSamplingTargetOnly<1024, false, false>(
@@ -637,6 +697,7 @@ cudaError_t TreeSpeculativeSamplingTargetOnly(
       csd_dynamic_update_ignore_prob_ratio,
       csd_force_accept_disabled,
       csd_logit_margin,
+      csd_force_accept_entropy_threshold,
       stream);
 }
 

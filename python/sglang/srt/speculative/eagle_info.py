@@ -1,5 +1,7 @@
 import logging
 import math
+import os
+from contextlib import nullcontext
 from copy import copy
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -51,6 +53,17 @@ if is_cuda():
     )
 
 logger = logging.getLogger(__name__)
+
+
+def _csd_profile_range(name: str):
+    if os.environ.get("SGLANG_CSD_PROFILE_ANNOTATIONS", "").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        return torch.profiler.record_function(name)
+    return nullcontext()
 
 
 @dataclass
@@ -355,7 +368,9 @@ class EagleVerifyInput(SpecInput, EagleVerifyInputV2Mixin):
                     if csd_runtime and csd_runtime.delta_buffer is not None
                     else 0
                 ),
-                csd_enabled=bool(csd_runtime and csd_runtime.enabled and csd_runtime.has_table),
+                csd_enabled=bool(
+                    csd_runtime and csd_runtime.enabled and csd_runtime.has_table
+                ),
                 csd_dynamic_update=bool(
                     csd_runtime
                     and csd_runtime.dynamic_update
@@ -376,105 +391,135 @@ class EagleVerifyInput(SpecInput, EagleVerifyInputV2Mixin):
             )
 
         else:
-            # apply temperature and get target probs
-            expanded_temperature = torch.repeat_interleave(
-                sampling_info.temperatures, self.draft_token_num, dim=0
-            )  # (bs * draft_token_num, 1)
+            csd_enabled_flag = bool(
+                csd_runtime and csd_runtime.enabled and csd_runtime.has_table
+            )
+            csd_dynamic_flag = bool(
+                csd_runtime
+                and csd_runtime.dynamic_update
+                and csd_runtime.delta_buffer is not None
+            )
+            csd_ignore_ratio_flag = bool(
+                csd_runtime
+                and csd_runtime.dynamic_update
+                and csd_runtime.dynamic_update_ignore_prob_ratio
+                and csd_runtime.delta_buffer is not None
+            )
+            csd_entropy_threshold = (
+                get_global_server_args().speculative_csd_force_accept_entropy_threshold
+            )
 
-            target_probs = F.softmax(
-                logits_output.next_token_logits / expanded_temperature, dim=-1
-            )  # (bs * draft_token_num, vocab_size)
-            target_probs = top_k_renorm_prob(
-                target_probs,
-                torch.repeat_interleave(
-                    sampling_info.top_ks, self.draft_token_num, dim=0
-                ),
-            )  # (bs * draft_token_num, vocab_size)
-            if sampling_info.need_top_p_sampling:
-                target_probs = top_p_renorm_prob(
+            # apply temperature and get target probs
+            with _csd_profile_range("csd_verify:target_probs_softmax_topk_topp"):
+                expanded_temperature = torch.repeat_interleave(
+                    sampling_info.temperatures, self.draft_token_num, dim=0
+                )  # (bs * draft_token_num, 1)
+
+                target_probs = F.softmax(
+                    logits_output.next_token_logits / expanded_temperature, dim=-1
+                )  # (bs * draft_token_num, vocab_size)
+                target_probs = top_k_renorm_prob(
                     target_probs,
                     torch.repeat_interleave(
-                        sampling_info.top_ps, self.draft_token_num, dim=0
+                        sampling_info.top_ks, self.draft_token_num, dim=0
                     ),
+                )  # (bs * draft_token_num, vocab_size)
+                if sampling_info.need_top_p_sampling:
+                    target_probs = top_p_renorm_prob(
+                        target_probs,
+                        torch.repeat_interleave(
+                            sampling_info.top_ps, self.draft_token_num, dim=0
+                        ),
+                    )
+                target_probs = target_probs.reshape(bs, self.draft_token_num, -1)
+
+            with _csd_profile_range("csd_verify:allocate_draft_probs_and_coins"):
+                draft_probs = torch.zeros(
+                    target_probs.shape, dtype=torch.float32, device=batch.device
                 )
-            target_probs = target_probs.reshape(bs, self.draft_token_num, -1)
 
-            draft_probs = torch.zeros(
-                target_probs.shape, dtype=torch.float32, device=batch.device
-            )
-
-            # coins for rejection sampling
-            coins = torch.rand_like(
-                candidates, dtype=torch.float32, device=batch.device
-            )
-            # coins for final sampling
-            coins_for_final_sampling = torch.rand(
-                (bs,), dtype=torch.float32, device=batch.device
-            )
-            tree_speculative_sampling_target_only(
-                predicts=predict,  # mutable
-                accept_index=accept_index,  # mutable
-                accept_token_num=accept_length,  # mutable
-                candidates=candidates,
-                retrive_index=self.retrive_index,
-                retrive_next_token=self.retrive_next_token,
-                retrive_next_sibling=self.retrive_next_sibling,
-                uniform_samples=coins,
-                uniform_samples_for_final_sampling=coins_for_final_sampling,
-                target_probs=target_probs,
-                draft_probs=draft_probs,
-                target_logits=logits_output.next_token_logits.reshape(
+                # coins for rejection sampling
+                coins = torch.rand_like(
+                    candidates, dtype=torch.float32, device=batch.device
+                )
+                # coins for final sampling
+                coins_for_final_sampling = torch.rand(
+                    (bs,), dtype=torch.float32, device=batch.device
+                )
+            with _csd_profile_range(
+                "csd_verify:tree_spec_sampling_kernel "
+                f"enabled={int(csd_enabled_flag)} "
+                f"dynamic={int(csd_dynamic_flag)} "
+                f"ignore_ratio={int(csd_ignore_ratio_flag)} "
+                f"entropy={csd_entropy_threshold}"
+            ):
+                tree_speculative_sampling_target_only(
+                    predicts=predict,  # mutable
+                    accept_index=accept_index,  # mutable
+                    accept_token_num=accept_length,  # mutable
+                    candidates=candidates,
+                    retrive_index=self.retrive_index,
+                    retrive_next_token=self.retrive_next_token,
+                    retrive_next_sibling=self.retrive_next_sibling,
+                    uniform_samples=coins,
+                    uniform_samples_for_final_sampling=coins_for_final_sampling,
+                    target_probs=target_probs,
+                    draft_probs=draft_probs,
+                    target_logits=logits_output.next_token_logits.reshape(
                     bs, self.draft_token_num, -1
-                ),
-                csd_table_keys=csd_runtime.table.keys if csd_runtime else None,
-                csd_delta_pairs=(
+                    ),
+                    csd_table_keys=csd_runtime.table.keys if csd_runtime else None,
+                    csd_delta_pairs=(
                     csd_runtime.delta_buffer.pairs
                     if csd_runtime and csd_runtime.delta_buffer is not None
                     else None
-                ),
-                csd_delta_counter=(
+                    ),
+                    csd_delta_counter=(
                     csd_runtime.delta_buffer.counter
                     if csd_runtime and csd_runtime.delta_buffer is not None
                     else None
-                ),
-                csd_lookup_hit_ct=(
+                    ),
+                    csd_lookup_hit_ct=(
                     csd_runtime.metrics.lookup_hit_ct if csd_runtime else None
-                ),
-                csd_forced_accept_ct=(
+                    ),
+                    csd_forced_accept_ct=(
                     csd_runtime.metrics.forced_accept_ct if csd_runtime else None
-                ),
-                csd_delta_pair_ct=(
+                    ),
+                    csd_delta_pair_ct=(
                     csd_runtime.metrics.delta_pair_ct if csd_runtime else None
-                ),
-                csd_table_capacity=csd_runtime.table.capacity if csd_runtime else 0,
-                csd_table_max_probe=csd_runtime.table.max_probe if csd_runtime else 0,
-                csd_delta_capacity=(
+                    ),
+                    csd_table_capacity=csd_runtime.table.capacity if csd_runtime else 0,
+                    csd_table_max_probe=csd_runtime.table.max_probe if csd_runtime else 0,
+                    csd_delta_capacity=(
                     csd_runtime.delta_buffer.capacity
                     if csd_runtime and csd_runtime.delta_buffer is not None
                     else 0
-                ),
-                csd_enabled=bool(csd_runtime and csd_runtime.enabled and csd_runtime.has_table),
-                csd_dynamic_update=bool(
+                    ),
+                    csd_enabled=bool(
+                    csd_runtime and csd_runtime.enabled and csd_runtime.has_table
+                    ),
+                    csd_dynamic_update=bool(
                     csd_runtime
                     and csd_runtime.dynamic_update
                     and csd_runtime.delta_buffer is not None
-                ),
-                csd_dynamic_update_ignore_prob_ratio=bool(
+                    ),
+                    csd_dynamic_update_ignore_prob_ratio=bool(
                     csd_runtime
                     and csd_runtime.dynamic_update
                     and csd_runtime.dynamic_update_ignore_prob_ratio
                     and csd_runtime.delta_buffer is not None
-                ),
-                csd_force_accept_disabled=bool(
+                    ),
+                    csd_force_accept_disabled=bool(
                     csd_runtime and csd_runtime.force_accept_disabled
-                ),
-                csd_logit_margin=math.log(
+                    ),
+                    csd_logit_margin=math.log(
                     get_global_server_args().speculative_csd_prob_ratio
-                ),
-                threshold_single=get_global_server_args().speculative_accept_threshold_single,
-                threshold_acc=get_global_server_args().speculative_accept_threshold_acc,
-                deterministic=True,
-            )
+                    ),
+                    csd_force_accept_entropy_threshold=get_global_server_args().speculative_csd_force_accept_entropy_threshold,
+                    threshold_single=get_global_server_args().speculative_accept_threshold_single,
+                    threshold_acc=get_global_server_args().speculative_accept_threshold_acc,
+                    deterministic=True,
+                )
 
         if SIMULATE_ACC_LEN > 0.0:
             # Do simulation
@@ -488,66 +533,73 @@ class EagleVerifyInput(SpecInput, EagleVerifyInputV2Mixin):
 
         unfinished_index = []
         unfinished_accept_index = []
-        accept_index_cpu = accept_index.tolist()
-        predict_cpu = predict.tolist()
+        with _csd_profile_range("csd_verify:accept_index_predict_to_cpu_sync"):
+            accept_index_cpu = accept_index.tolist()
+            predict_cpu = predict.tolist()
         has_finished = False
 
         # Iterate every accepted token and check if req has finished after append the token
         # should be checked BEFORE free kv cache slots
-        for i, (req, accept_index_row) in enumerate(zip(batch.reqs, accept_index_cpu)):
-            num_accepted = 0
-            for j, idx in enumerate(accept_index_row):
-                if idx == -1:
-                    break
-                num_accepted += 1
-                id = predict_cpu[idx]
-                req.output_ids.append(id)
-                req.check_finished()
-                if req.finished():
-                    has_finished = True
-                    # set all tokens after finished token to -1 and break
-                    accept_index[i, j + 1 :] = -1
-                    break
-                else:
-                    if req.grammar is not None:
-                        try:
-                            req.grammar.accept_token(id)
-                        except ValueError as e:
-                            logger.info(
-                                f"{i=}, {req=}\n" f"{accept_index=}\n" f"{predict=}\n"
-                            )
-                            raise e
-            # Update KV cache tracking for the accepted tokens
-            req.kv_committed_len += num_accepted
-            req.kv_allocated_len = req.kv_committed_len
-            if not req.finished():
-                unfinished_index.append(i)
-                if idx == -1:
-                    unfinished_accept_index.append(accept_index[i, :j])
-                else:
-                    unfinished_accept_index.append(accept_index[i])
-            req.spec_verify_ct += 1
-            accepted_draft_tokens = sum(1 for idx in accept_index_row if idx != -1) - 1
-            req.spec_accepted_tokens += accepted_draft_tokens
-            req.update_spec_acceptance_histogram(accepted_draft_tokens)
+        with _csd_profile_range("csd_verify:python_update_reqs_and_acceptance"):
+            for i, (req, accept_index_row) in enumerate(zip(batch.reqs, accept_index_cpu)):
+                num_accepted = 0
+                for j, idx in enumerate(accept_index_row):
+                    if idx == -1:
+                        break
+                    num_accepted += 1
+                    id = predict_cpu[idx]
+                    req.output_ids.append(id)
+                    req.check_finished()
+                    if req.finished():
+                        has_finished = True
+                        # set all tokens after finished token to -1 and break
+                        accept_index[i, j + 1 :] = -1
+                        break
+                    else:
+                        if req.grammar is not None:
+                            try:
+                                req.grammar.accept_token(id)
+                            except ValueError as e:
+                                logger.info(
+                                    f"{i=}, {req=}\n" f"{accept_index=}\n" f"{predict=}\n"
+                                )
+                                raise e
+                # Update KV cache tracking for the accepted tokens
+                req.kv_committed_len += num_accepted
+                req.kv_allocated_len = req.kv_committed_len
+                if not req.finished():
+                    unfinished_index.append(i)
+                    if idx == -1:
+                        unfinished_accept_index.append(accept_index[i, :j])
+                    else:
+                        unfinished_accept_index.append(accept_index[i])
+                req.spec_verify_ct += 1
+                accepted_draft_tokens = sum(1 for idx in accept_index_row if idx != -1) - 1
+                req.spec_accepted_tokens += accepted_draft_tokens
+                req.update_spec_acceptance_histogram(accepted_draft_tokens)
 
         if has_finished:
             accept_length = (accept_index != -1).sum(dim=1) - 1
 
         # Free the KV cache for unaccepted tokens
         # TODO: fuse them
-        accept_index = accept_index[accept_index != -1]
-        verified_id = predict[accept_index]
-        evict_mask = torch.full_like(self.draft_token, True, dtype=torch.bool)
-        evict_mask[accept_index] = False
-        accept_length_cpu = accept_length.cpu()
-        # FIXME: this `tolist()` fixes the numerical calculation consistency
-        # try to unify the tensor representation and list representation
-        accept_length_list = accept_length_cpu.tolist()
+        with _csd_profile_range("csd_verify:flatten_accept_index_and_verified_id"):
+            accept_index = accept_index[accept_index != -1]
+            verified_id = predict[accept_index]
+        with _csd_profile_range("csd_verify:build_evict_mask"):
+            evict_mask = torch.full_like(self.draft_token, True, dtype=torch.bool)
+            evict_mask[accept_index] = False
+        with _csd_profile_range("csd_verify:accept_length_to_cpu_sync"):
+            accept_length_cpu = accept_length.cpu()
+            # FIXME: this `tolist()` fixes the numerical calculation consistency
+            # try to unify the tensor representation and list representation
+            accept_length_list = accept_length_cpu.tolist()
 
         if page_size == 1:
             # TODO: boolean array index leads to a device sync. Remove it.
-            token_to_kv_pool_allocator.free(batch.out_cache_loc[evict_mask])
+            with _csd_profile_range("csd_verify:kv_cache_free_page1"):
+                with _csd_profile_range("csd_verify:kv_cache_free_topk1"):
+                    token_to_kv_pool_allocator.free(batch.out_cache_loc[evict_mask])
         else:
             if self.topk == 1:
                 # Only evict full empty page. Do not evict partial empty page
@@ -597,39 +649,45 @@ class EagleVerifyInput(SpecInput, EagleVerifyInputV2Mixin):
                 )
 
                 # Free the kv cache
-                token_to_kv_pool_allocator.free(to_free_slots)
+                with _csd_profile_range("csd_verify:kv_cache_free_slots"):
+                    token_to_kv_pool_allocator.free(to_free_slots)
 
                 # Copy the kv cache
-                batch.token_to_kv_pool_allocator.get_kvcache().move_kv_cache(
-                    tgt_cache_loc, src_cache_loc
-                )
+                with _csd_profile_range("csd_verify:kv_cache_move"):
+                    batch.token_to_kv_pool_allocator.get_kvcache().move_kv_cache(
+                        tgt_cache_loc, src_cache_loc
+                    )
 
         # Construct EagleVerifyOutput
         if not has_finished:
             if page_size == 1 or self.topk == 1:
-                batch.out_cache_loc = batch.out_cache_loc[accept_index]
-                assign_req_to_token_pool_func(
-                    batch.req_pool_indices,
-                    batch.req_to_token_pool.req_to_token,
-                    batch.seq_lens,
-                    batch.seq_lens + accept_length + 1,
-                    batch.out_cache_loc,
-                    bs,
-                )
+                with _csd_profile_range("csd_verify:gather_out_cache_loc"):
+                    batch.out_cache_loc = batch.out_cache_loc[accept_index]
+                with _csd_profile_range("csd_verify:assign_req_to_token_pool"):
+                    assign_req_to_token_pool_func(
+                        batch.req_pool_indices,
+                        batch.req_to_token_pool.req_to_token,
+                        batch.seq_lens,
+                        batch.seq_lens + accept_length + 1,
+                        batch.out_cache_loc,
+                        bs,
+                    )
             else:
                 batch.out_cache_loc = tgt_cache_loc
-            batch.seq_lens.add_(accept_length + 1)
-            batch.seq_lens_cpu.add_(accept_length_cpu + 1)
+            with _csd_profile_range("csd_verify:update_seq_lens"):
+                batch.seq_lens.add_(accept_length + 1)
+                batch.seq_lens_cpu.add_(accept_length_cpu + 1)
 
-            draft_input = EagleDraftInput(
-                hidden_states=batch.spec_info.hidden_states[accept_index],
-                verified_id=verified_id,
-                accept_length=accept_length,
-                accept_length_cpu=accept_length_list,
-                seq_lens_for_draft_extend=batch.seq_lens,
-                seq_lens_for_draft_extend_cpu=batch.seq_lens_cpu,
-                req_pool_indices_for_draft_extend=batch.req_pool_indices,
-            )
+            with _csd_profile_range("csd_verify:build_draft_input"):
+                draft_input = EagleDraftInput(
+                    hidden_states=batch.spec_info.hidden_states[accept_index],
+                    verified_id=verified_id,
+                    accept_length=accept_length,
+                    accept_length_cpu=accept_length_list,
+                    seq_lens_for_draft_extend=batch.seq_lens,
+                    seq_lens_for_draft_extend_cpu=batch.seq_lens_cpu,
+                    req_pool_indices_for_draft_extend=batch.req_pool_indices,
+                )
 
             return EagleVerifyOutput(
                 draft_input=draft_input,

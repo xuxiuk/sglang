@@ -846,6 +846,8 @@ class EAGLEWorkerV2(BaseSpecWorker):
                 freq_threshold=self.server_args.speculative_csd_freq_threshold,
                 rebuild_threshold=self.server_args.speculative_csd_rebuild_threshold,
                 top_keep=self.server_args.speculative_csd_rebuild_top_keep,
+                key_selection_strategy=self.server_args.speculative_csd_key_selection_strategy,
+                score_threshold=self.server_args.speculative_csd_score_threshold,
             )
         new_seq_lens = batch.seq_lens + accept_length
 

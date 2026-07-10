@@ -34,6 +34,7 @@ def _build_csd_table(keys, capacity: int = 8, max_probe: int = 16):
             raise RuntimeError("failed to build CSD test table")
     return torch.tensor(table, dtype=torch.int64, device="cuda")
 
+
 test_cases = [
     (
         1,
@@ -192,7 +193,9 @@ def test_tree_speculative_sampling_target_only_csd_force_accept(
     candidates = torch.tensor([[0, 3, 4]], dtype=torch.int64, device=device)
     retrive_index = torch.tensor([[0, 1, 2]], dtype=torch.int64, device=device)
     retrive_next_token = torch.tensor([[1, -1, -1]], dtype=torch.int64, device=device)
-    retrive_next_sibling = torch.tensor([[-1, -1, -1]], dtype=torch.int64, device=device)
+    retrive_next_sibling = torch.tensor(
+        [[-1, -1, -1]], dtype=torch.int64, device=device
+    )
 
     target_probs = torch.zeros((1, 3, 8), dtype=torch.float32, device=device)
     target_probs[0, 0, 2] = 0.7
@@ -224,7 +227,9 @@ def test_tree_speculative_sampling_target_only_csd_force_accept(
         retrive_next_token=retrive_next_token,
         retrive_next_sibling=retrive_next_sibling,
         uniform_samples=torch.full((1, 3), 0.95, dtype=torch.float32, device=device),
-        uniform_samples_for_final_sampling=torch.zeros((1,), dtype=torch.float32, device=device),
+        uniform_samples_for_final_sampling=torch.zeros(
+            (1,), dtype=torch.float32, device=device
+        ),
         target_probs=target_probs,
         draft_probs=draft_probs,
         target_logits=target_logits,
@@ -256,6 +261,125 @@ def test_tree_speculative_sampling_target_only_csd_force_accept(
     assert csd_delta_counter.item() == expected_delta_pair_ct
     if expected_delta_pair_ct:
         assert csd_delta_pairs[:1].tolist() == [pair_key]
+
+
+@pytest.mark.parametrize(
+    (
+        "target_probs_values",
+        "csd_force_accept_entropy_threshold",
+        "expected_predicts",
+        "expected_accept_index",
+        "expected_accept_token_num",
+        "expected_forced_accept_ct",
+    ),
+    [
+        (
+            [0.7, 0.2, 0.1, 0, 0, 0, 0, 0],
+            1.3415851593017578,
+            [3, 2, -1],
+            [[0, 1]],
+            [1],
+            1,
+        ),
+        (
+            [0.26, 0.24, 0.20, 0.10, 0.08, 0.06, 0.04, 0.02],
+            1.3415851593017578,
+            [2, -1, -1],
+            [[0, -1]],
+            [0],
+            0,
+        ),
+        (
+            [0.26, 0.24, 0.20, 0.10, 0.08, 0.06, 0.04, 0.02],
+            -1.0,
+            [3, 2, -1],
+            [[0, 1]],
+            [1],
+            1,
+        ),
+    ],
+)
+def test_tree_speculative_sampling_target_only_csd_entropy_gate(
+    target_probs_values,
+    csd_force_accept_entropy_threshold,
+    expected_predicts,
+    expected_accept_index,
+    expected_accept_token_num,
+    expected_forced_accept_ct,
+):
+    device = "cuda"
+    candidates = torch.tensor([[0, 3, 4]], dtype=torch.int64, device=device)
+    retrive_index = torch.tensor([[0, 1, 2]], dtype=torch.int64, device=device)
+    retrive_next_token = torch.tensor([[1, -1, -1]], dtype=torch.int64, device=device)
+    retrive_next_sibling = torch.tensor(
+        [[-1, -1, -1]], dtype=torch.int64, device=device
+    )
+
+    target_probs = torch.zeros((1, 3, 8), dtype=torch.float32, device=device)
+    target_probs[0, 0] = torch.tensor(
+        target_probs_values, dtype=torch.float32, device=device
+    )
+    target_probs[0, 1, 2] = 1.0
+    draft_probs = torch.zeros_like(target_probs)
+    target_logits = torch.zeros((1, 3, 8), dtype=torch.float32, device=device)
+    target_logits[0, 0, 2] = 10.0
+    target_logits[0, 0, 3] = 9.5
+
+    pair_key = _pack_csd_pair(3, 2)
+    csd_table_keys = _build_csd_table([pair_key], capacity=8, max_probe=16)
+    csd_delta_pairs = torch.empty((4,), dtype=torch.int64, device=device)
+    csd_delta_counter = torch.zeros((1,), dtype=torch.int32, device=device)
+    csd_lookup_hit_ct = torch.zeros((1,), dtype=torch.int64, device=device)
+    csd_forced_accept_ct = torch.zeros((1,), dtype=torch.int64, device=device)
+    csd_delta_pair_ct = torch.zeros((1,), dtype=torch.int64, device=device)
+
+    predicts = torch.full((3,), -1, dtype=torch.int32, device=device)
+    accept_index = torch.full((1, 2), -1, dtype=torch.int32, device=device)
+    accept_token_num = torch.zeros((1,), dtype=torch.int32, device=device)
+
+    tree_speculative_sampling_target_only(
+        predicts=predicts,
+        accept_index=accept_index,
+        accept_token_num=accept_token_num,
+        candidates=candidates,
+        retrive_index=retrive_index,
+        retrive_next_token=retrive_next_token,
+        retrive_next_sibling=retrive_next_sibling,
+        uniform_samples=torch.full((1, 3), 0.95, dtype=torch.float32, device=device),
+        uniform_samples_for_final_sampling=torch.zeros(
+            (1,), dtype=torch.float32, device=device
+        ),
+        target_probs=target_probs,
+        draft_probs=draft_probs,
+        target_logits=target_logits,
+        csd_table_keys=csd_table_keys,
+        csd_delta_pairs=csd_delta_pairs,
+        csd_delta_counter=csd_delta_counter,
+        csd_lookup_hit_ct=csd_lookup_hit_ct,
+        csd_forced_accept_ct=csd_forced_accept_ct,
+        csd_delta_pair_ct=csd_delta_pair_ct,
+        csd_table_capacity=8,
+        csd_table_max_probe=16,
+        csd_delta_capacity=4,
+        csd_enabled=True,
+        csd_dynamic_update=True,
+        csd_dynamic_update_ignore_prob_ratio=False,
+        csd_force_accept_disabled=False,
+        csd_logit_margin=math.log(0.5),
+        csd_force_accept_entropy_threshold=csd_force_accept_entropy_threshold,
+        threshold_single=1.0,
+        threshold_acc=1.0,
+        deterministic=True,
+    )
+
+    assert predicts.tolist() == expected_predicts
+    assert accept_index.tolist() == expected_accept_index
+    assert accept_token_num.tolist() == expected_accept_token_num
+    assert csd_lookup_hit_ct.item() == 1
+    assert csd_forced_accept_ct.item() == expected_forced_accept_ct
+    assert csd_delta_pair_ct.item() == 1
+    assert csd_delta_counter.item() == 1
+    assert csd_delta_pairs[:1].tolist() == [pair_key]
 
 
 if __name__ == "__main__":

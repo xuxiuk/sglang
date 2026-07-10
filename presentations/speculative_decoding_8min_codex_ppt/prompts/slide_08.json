@@ -1,0 +1,41 @@
+{
+  "slide": 8,
+  "title": "Speculative Decoding",
+  "prompt": "# Codex PPT Slide Image Prompt\n\n## Canvas\n{\n  \"type\": \"16:9 full-slide PowerPoint image\",\n  \"language\": \"English\",\n  \"slide_number\": 8,\n  \"render_slide_number\": false\n}\n\n## Deck Goal\nExplain speculative decoding to a general English-class audience in an 8-minute group presentation, with four speakers sharing the talk equally.\n\n## Required Background\n{\n  \"deck_context\": {\n    \"source_summary\": \"Based mainly on Hugging Face's article about assisted generation, with the original speculative decoding paper used for credibility. The core mechanism is simple: a smaller draft model proposes several tokens quickly, and the larger target model verifies them, accepting correct guesses and replacing the first wrong guess.\",\n    \"core_claim\": \"Speculative decoding speeds up text generation by letting a fast helper model draft tokens while the large model still controls the final output.\",\n    \"canonical_terms\": [\n      \"speculative decoding\",\n      \"assisted generation\",\n      \"draft model\",\n      \"target model\",\n      \"token\",\n      \"verification\",\n      \"accepted token\",\n      \"rejected token\"\n    ],\n    \"speaker_split\": \"Speaker 1 covers slides 1-3, Speaker 2 covers slides 4-6, Speaker 3 covers slides 7-9, and Speaker 4 covers slides 10-12.\"\n  },\n  \"slide_local_context\": {\n    \"required_background\": \"Use the approved concrete example: prompt 'Today I ate a', draft tokens 'slice', 'of', 'pizza', 'yesterday', accepted tokens 'slice', 'of', 'pizza', rejected draft 'yesterday', replacement token 'for'.\"\n  }\n}\n\n## Global Style\n{\n  \"name\": \"Clean Technology Explainer\",\n  \"visual_direction\": \"bright off-white classroom-friendly technology explainer; clear diagrams, friendly AI/chat icons, process arrows, and simple comparison layouts\",\n  \"color_palette\": \"warm off-white background, deep navy titles, medium blue process arrows and outlines, green acceptance highlights, red rejection highlights only for errors, charcoal body text\",\n  \"typography\": \"large bold English headings, compact readable body text, strong hierarchy, no negative letter spacing, no tiny labels\",\n  \"texture_and_finish\": \"flat vector-like full-slide image with subtle shadows and soft rounded rectangles, polished but not corporate-heavy\",\n  \"deck_consistency\": \"same palette, typography, icon language, spacing, and clean low-clutter mood across all slides\"\n}\n\n## Input Images\n\n- Image 1: /root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png — approved sample slide style reference; match palette, typography mood, diagram clarity, and density only; do not copy the exact layout unless requested\n\n\n## Slide\n{\n  \"number\": 8,\n  \"title\": \"Speculative Decoding\",\n  \"role\": \"process comparison\",\n  \"intent\": \"Approved sample slide showing the draft-and-verify workflow with a concrete token example.\"\n}\n\n## Text\n{\n  \"title\": \"Speculative Decoding\",\n  \"key_points\": [\n    \"The small model guesses several tokens first.\",\n    \"The large model verifies the guessed tokens together.\",\n    \"Accepted guesses move forward; a wrong guess is replaced.\"\n  ],\n  \"speaker_focus\": \"Speaker 3 walks through the sample: prompt, draft tokens, verification, accepted tokens, rejected token, and replacement.\"\n}\n\n## Layout\n{\n  \"composition\": \"approved sample slide already generated\",\n  \"relationship_to_previous_slide\": \"core demonstration slide\"\n}\n\n## Visual Elements\n{\n  \"main_visual\": \"approved sample image\"\n}\n\n## Constraints\n[\n  \"This slide is already approved and should not be regenerated.\"\n]\n\n## Style Reference Rule\nUse Image 1 as the approved sample-slide style reference. Match its palette, typography mood, density, texture, and overall visual identity. Do not copy its exact layout unless this slide's layout explicitly asks for it.\n\n## Input Image Handling Rules\nFor any input image marked as a strict input asset, include it visibly and preserve its content. Do not redraw, replace, relabel, or invent a similar figure. Scale and crop only as needed for composition while keeping the important labels, arrows, data, and relationships recognizable.\n\n## Universal Constraints\n- The final image itself must contain the title and key points.\n- Render Chinese text exactly and legibly; avoid garbled characters.\n- Keep the confirmed deck style consistent while varying layout by slide role.\n- No watermark, unrelated logo, or extra slide number.\n",
+  "out": "slide_08.png",
+  "input_images": [
+    {
+      "path": "/root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png",
+      "role": "approved sample slide style reference",
+      "fidelity": "match palette, typography mood, diagram clarity, and density only; do not copy the exact layout unless requested"
+    }
+  ],
+  "requires_context_images": true,
+  "expected_backend": "built-in image tool",
+  "sample_generation_method": {
+    "backend_used": "built-in image tool",
+    "tool_name": "image_gen",
+    "mode": "generate",
+    "model_config": "built-in default; 16:9 landscape image",
+    "prompt_source": "approved slide 8 sample prompt showing small model draft tokens, large model verification, accepted tokens, rejected draft token, and replacement token from the large model",
+    "approved_sample_path": "/root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png",
+    "input_context_preparation": "no required source image assets; use approved sample slide as style reference for later slides",
+    "handoff_rule": "Use this same built-in image_gen generate workflow; return a blocker if unavailable."
+  },
+  "generation_contract": {
+    "must_use_selected_image_backend": true,
+    "must_match_sample_generation_method": true,
+    "forbidden_final_image_methods": [
+      "local drawing/rendering scripts",
+      "Pillow-generated slides",
+      "SVG/HTML/CSS/canvas screenshots",
+      "python-pptx/PptxGenJS/native PPT layout screenshots",
+      "manually composited text/image overlays"
+    ],
+    "must_return": [
+      "backend_used",
+      "selected_source",
+      "qa_note"
+    ]
+  }
+}

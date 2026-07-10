@@ -26,7 +26,6 @@ import os
 import time
 from dataclasses import asdict, dataclass, field
 
-import git
 import xxhash
 
 from lighteval.metrics.utils.stderr import get_stderr_function
@@ -36,8 +35,12 @@ from lighteval.tasks.lighteval_task import LightevalTask, LightevalTaskConfig
 from lighteval.tasks.requests import Doc
 from lighteval.utils.imports import is_package_available
 
-
 logger = logging.getLogger(__name__)
+
+try:
+    import git
+except ImportError:
+    git = None
 
 
 if is_package_available("nanotron"):
@@ -95,10 +98,13 @@ class GeneralConfigLogger:
 
     def __init__(self) -> None:
         """Stores the current lighteval commit for reproducibility, and starts the evaluation timer."""
-        try:
-            repo = git.Repo(os.path.dirname(__file__).split("src")[0])
-        except git.InvalidGitRepositoryError:
+        if git is None:
             repo = None
+        else:
+            try:
+                repo = git.Repo(os.path.dirname(__file__).split("src")[0])
+            except git.InvalidGitRepositoryError:
+                repo = None
 
         self.lighteval_sha = repo.git.rev_parse("HEAD") if repo is not None else "?"
         self.start_time = time.perf_counter()
@@ -238,17 +244,23 @@ class DetailsLogger:
         hash_input_tokens: str = ""
         hash_cont_tokens: str = ""
 
-    hashes: dict[str, list[Hash]] = field(default_factory=lambda: collections.defaultdict(list))
+    hashes: dict[str, list[Hash]] = field(
+        default_factory=lambda: collections.defaultdict(list)
+    )
     compiled_hashes: dict[str, CompiledHash] = field(
         default_factory=lambda: collections.defaultdict(DetailsLogger.CompiledHash)
     )
 
     # dict of details for each task, i.e. winogrande: [example1_details, example2_details, ...]
-    details: dict[str, list[Detail]] = field(default_factory=lambda: collections.defaultdict(list))
+    details: dict[str, list[Detail]] = field(
+        default_factory=lambda: collections.defaultdict(list)
+    )
     compiled_details: dict[str, CompiledDetail] = field(
         default_factory=lambda: collections.defaultdict(DetailsLogger.CompiledDetail)
     )
-    compiled_details_over_all_tasks: CompiledDetailOverAllTasks = field(default_factory=CompiledDetailOverAllTasks)
+    compiled_details_over_all_tasks: CompiledDetailOverAllTasks = field(
+        default_factory=CompiledDetailOverAllTasks
+    )
 
     def log(
         self,
@@ -293,7 +305,9 @@ class DetailsLogger:
             self.compiled_hashes[task_name] = compiled_hash
 
         for task_name, _ in self.details.items():
-            self.compiled_details[task_name].hashes = asdict(self.compiled_hashes[task_name])
+            self.compiled_details[task_name].hashes = asdict(
+                self.compiled_hashes[task_name]
+            )
 
         if not self.compiled_details:
             return
@@ -303,7 +317,8 @@ class DetailsLogger:
         for hash_type in hash_types:
             self.compiled_details_over_all_tasks.hashes[hash_type] = xxhash.xxh64(
                 "".join(
-                    compiled_detail.hashes[hash_type] for _, compiled_detail in sorted(self.compiled_details.items())
+                    compiled_detail.hashes[hash_type]
+                    for _, compiled_detail in sorted(self.compiled_details.items())
                 )
             ).hexdigest()
 
@@ -320,17 +335,23 @@ class MetricsLogger:
     """
 
     metrics_values: dict[str, dict[str, list[float]]] = field(
-        default_factory=lambda: collections.defaultdict(lambda: collections.defaultdict(list))
+        default_factory=lambda: collections.defaultdict(
+            lambda: collections.defaultdict(list)
+        )
     )
     metric_aggregated: dict[str, dict[str, float]] = field(
-        default_factory=lambda: collections.defaultdict(lambda: collections.defaultdict(float))
+        default_factory=lambda: collections.defaultdict(
+            lambda: collections.defaultdict(float)
+        )
     )
 
     def log(self, task_name: str, metrics: dict) -> None:
         for metric_name, metric_value in metrics.items():
             self.metrics_values[task_name][metric_name].append(metric_value)
 
-    def aggregate(self, task_dict: dict[str, LightevalTask], bootstrap_iters: int = 1000):  # noqa: C901
+    def aggregate(
+        self, task_dict: dict[str, LightevalTask], bootstrap_iters: int = 1000
+    ):  # noqa: C901
         """Aggregate the metrics for each task and then for all tasks.
 
         Args:
@@ -351,28 +372,40 @@ class MetricsLogger:
                 try:
                     metric_result = aggregation(metric_values)
                 except OverflowError:
-                    logger.warning(f"{task_name}, {metric_name} got an OVERFLOW ERROR when aggregating.")
+                    logger.warning(
+                        f"{task_name}, {metric_name} got an OVERFLOW ERROR when aggregating."
+                    )
                     metric_result = float("nan")
 
-                if isinstance(metric_result, dict):  # For some corpus level grouping metrics
+                if isinstance(
+                    metric_result, dict
+                ):  # For some corpus level grouping metrics
                     self.metric_aggregated[task_name].update(metric_result)
-                    skip_metric.extend(list(metric_result.keys()))  # no need to recompute them later
+                    skip_metric.extend(
+                        list(metric_result.keys())
+                    )  # no need to recompute them later
                 else:
                     self.metric_aggregated[task_name][metric_name] = metric_result
 
                 if isinstance(metric_result, dict) or bootstrap_iters == 0:
-                    stderr = (
-                        None  # We skip stderr for some corpus metrics that return dicts, or if bootstrap_iters is 0
-                    )
+                    stderr = None  # We skip stderr for some corpus metrics that return dicts, or if bootstrap_iters is 0
                 else:
-                    stderr = get_stderr_function(aggregation=aggregation, number_experiments=bootstrap_iters)
+                    stderr = get_stderr_function(
+                        aggregation=aggregation, number_experiments=bootstrap_iters
+                    )
                 if stderr is not None and len(metric_values) > 1:
                     try:
-                        self.metric_aggregated[task_name][f"{metric_name}_stderr"] = stderr(metric_values)
+                        self.metric_aggregated[task_name][f"{metric_name}_stderr"] = (
+                            stderr(metric_values)
+                        )
                     except OverflowError:
                         # Is this need or should we just pass?
-                        self.metric_aggregated[task_name][f"{metric_name}_stderr"] = float("nan")
-                        logger.warning(f"{task_name}, {metric_name} got an OVERFLOW ERROR when computing stderr.")
+                        self.metric_aggregated[task_name][f"{metric_name}_stderr"] = (
+                            float("nan")
+                        )
+                        logger.warning(
+                            f"{task_name}, {metric_name} got an OVERFLOW ERROR when computing stderr."
+                        )
 
         # We group subtasks which belong to the same parent task, like MMLU, to compute an average on them
         # and compute an average of all metrics
@@ -394,7 +427,10 @@ class MetricsLogger:
             if len(list_of_subtasks) > 1:
                 metrics = list(self.metric_aggregated[list_of_subtasks[0]].keys())
                 self.metric_aggregated[average_task] = {
-                    metric: sum(self.metric_aggregated[k][metric] for k in list_of_subtasks) / len(list_of_subtasks)
+                    metric: sum(
+                        self.metric_aggregated[k][metric] for k in list_of_subtasks
+                    )
+                    / len(list_of_subtasks)
                     for metric in metrics
                 }
 
@@ -438,6 +474,8 @@ class TaskConfigLogger:
     def log(self, task_dict: dict[str, LightevalTask]) -> None:
         self.tasks_configs = {name: task.config for name, task in task_dict.items()}
 
-    def log_num_docs(self, task_name: str, original_num_docs: int, effective_num_docs: int) -> None:
+    def log_num_docs(
+        self, task_name: str, original_num_docs: int, effective_num_docs: int
+    ) -> None:
         self.tasks_configs[task_name].original_num_docs = original_num_docs
         self.tasks_configs[task_name].effective_num_docs = effective_num_docs

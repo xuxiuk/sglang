@@ -1,0 +1,481 @@
+{
+  "run_status": "slides_recorded",
+  "deck_name": "speculative_decoding_8min_codex_ppt",
+  "selected_backend": "built-in image tool",
+  "sample_generation_method": {
+    "backend_used": "built-in image tool",
+    "tool_name": "image_gen",
+    "mode": "generate",
+    "model_config": "built-in default; 16:9 landscape image",
+    "prompt_source": "approved slide 8 sample prompt showing small model draft tokens, large model verification, accepted tokens, rejected draft token, and replacement token from the large model",
+    "approved_sample_path": "/root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png",
+    "input_context_preparation": "no required source image assets; use approved sample slide as style reference for later slides",
+    "handoff_rule": "Use this same built-in image_gen generate workflow; return a blocker if unavailable."
+  },
+  "max_concurrent_slides": 6,
+  "slides": [
+    {
+      "slide_id": "slide_01",
+      "number": 1,
+      "title": "How AI Answers Faster",
+      "job": "prompts/slide_01.json",
+      "out": "origin_image/slide_01.png",
+      "input_images": [
+        {
+          "path": "/root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match palette, typography mood, diagram clarity, and density only; do not copy the exact layout unless requested"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "019ec562-799b-71e1-984d-1840198ab387",
+        "agent_nickname": "Laplace",
+        "prompt": "prompts/slide_01.json",
+        "prompt_sha256": "a9bcff6bc5b82590a81f590fd15024190f8ded71fc707346d9cb6518f7f8b7ab",
+        "dispatched_at": "2026-06-14T09:07:26Z"
+      },
+      "result": {
+        "agent_id": "019ec562-799b-71e1-984d-1840198ab387",
+        "backend_used": "built-in image tool",
+        "selected_source": "/root/.codex/generated_images/019ec562-799b-71e1-984d-1840198ab387/ig_053e778fe90a336a016a2e6f5690248197abc6281675364874.png",
+        "selected_source_sha256": "cf41e4258736680c460124ee4373c75949b81baf05b2fba8c575b3a9a2cb2cea",
+        "final_image": "origin_image/slide_01.png",
+        "final_image_sha256": "cf41e4258736680c460124ee4373c75949b81baf05b2fba8c575b3a9a2cb2cea",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Text readable; style matches the approved sample; no page number or major overlap.",
+        "recorded_at": "2026-06-14T09:11:00Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_02",
+      "number": 2,
+      "title": "The Problem: One Piece at a Time",
+      "job": "prompts/slide_02.json",
+      "out": "origin_image/slide_02.png",
+      "input_images": [
+        {
+          "path": "/root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match palette, typography mood, diagram clarity, and density only; do not copy the exact layout unless requested"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "019ec562-79bb-76d0-8982-316b6faf7970",
+        "agent_nickname": "Sagan",
+        "prompt": "prompts/slide_02.json",
+        "prompt_sha256": "98e5cac7ec63d0edbbc6742e9212a7da9f62cd97410178cbeab735802480151c",
+        "dispatched_at": "2026-06-14T09:07:26Z"
+      },
+      "result": {
+        "agent_id": "019ec562-79bb-76d0-8982-316b6faf7970",
+        "backend_used": "built-in image tool",
+        "selected_source": "/root/.codex/generated_images/019ec562-79bb-76d0-8982-316b6faf7970/ig_0985e83b5f34c277016a2e6f5811c88195b4c0f6bb4cb70bad.png",
+        "selected_source_sha256": "6ba2d2bfe7e6d94ed29a76c2e30921f27c0c0dfd50689f7d63f3fab4fb97c6c9",
+        "final_image": "origin_image/slide_02.png",
+        "final_image_sha256": "6ba2d2bfe7e6d94ed29a76c2e30921f27c0c0dfd50689f7d63f3fab4fb97c6c9",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Text readable; style matches the approved sample; process step labels are intentional and no page number is present.",
+        "recorded_at": "2026-06-14T09:11:00Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_03",
+      "number": 3,
+      "title": "Why Speed Matters",
+      "job": "prompts/slide_03.json",
+      "out": "origin_image/slide_03.png",
+      "input_images": [
+        {
+          "path": "/root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match palette, typography mood, diagram clarity, and density only; do not copy the exact layout unless requested"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "019ec562-79ec-7060-a3c7-8d86c65dffe0",
+        "agent_nickname": "Banach",
+        "prompt": "prompts/slide_03.json",
+        "prompt_sha256": "8160733023d6c3ebebab15cf3606a3747856f193410ea0d4a366f11fe71b8546",
+        "dispatched_at": "2026-06-14T09:07:26Z"
+      },
+      "result": {
+        "agent_id": "019ec562-79ec-7060-a3c7-8d86c65dffe0",
+        "backend_used": "built-in image tool",
+        "selected_source": "/root/.codex/generated_images/019ec562-79ec-7060-a3c7-8d86c65dffe0/ig_0bf2997bfc0af2ee016a2e6fb67a8c8197ac834c48c014f24a.png",
+        "selected_source_sha256": "01f94b9e6b1c2139fa13c21a7dd6bb14fb7764ff1aa7d88bf8eece014a6113af",
+        "final_image": "origin_image/slide_03.png",
+        "final_image_sha256": "01f94b9e6b1c2139fa13c21a7dd6bb14fb7764ff1aa7d88bf8eece014a6113af",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Text readable; style matches the approved sample; motivation contrast is clear.",
+        "recorded_at": "2026-06-14T09:11:29Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_04",
+      "number": 4,
+      "title": "The Core Idea",
+      "job": "prompts/slide_04.json",
+      "out": "origin_image/slide_04.png",
+      "input_images": [
+        {
+          "path": "/root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match palette, typography mood, diagram clarity, and density only; do not copy the exact layout unless requested"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "019ec562-7a22-7253-98b7-250edee4051e",
+        "agent_nickname": "Galileo",
+        "prompt": "prompts/slide_04.json",
+        "prompt_sha256": "6f7de1ffc2f93876488c9bd22e8d6728b2ac135653da784f9e4da1d186b33dab",
+        "dispatched_at": "2026-06-14T09:07:27Z"
+      },
+      "result": {
+        "agent_id": "019ec562-7a22-7253-98b7-250edee4051e",
+        "backend_used": "built-in image tool",
+        "selected_source": "/root/.codex/generated_images/019ec562-7a22-7253-98b7-250edee4051e/ig_0d0faffd02ce3550016a2e6f4ce39c8193b23e4f9b945cd4fb.png",
+        "selected_source_sha256": "4fbc2484c90ff5f24de91990db535d3a7d1c878d5769182d5e5ccc5424901b0b",
+        "final_image": "origin_image/slide_04.png",
+        "final_image_sha256": "4fbc2484c90ff5f24de91990db535d3a7d1c878d5769182d5e5ccc5424901b0b",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Text readable; style matches the approved sample; process step numbers are intentional and not page numbers.",
+        "recorded_at": "2026-06-14T09:09:33Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_05",
+      "number": 5,
+      "title": "Draft Model vs Target Model",
+      "job": "prompts/slide_05.json",
+      "out": "origin_image/slide_05.png",
+      "input_images": [
+        {
+          "path": "/root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match palette, typography mood, diagram clarity, and density only; do not copy the exact layout unless requested"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "019ec562-7a63-7e43-a660-9341477845f9",
+        "agent_nickname": "Bohr",
+        "prompt": "prompts/slide_05.json",
+        "prompt_sha256": "9cbec960fd0a569d6f8a8867b6a9b18b7b2a5be8bb341a1bf226995db221e9b5",
+        "dispatched_at": "2026-06-14T09:07:26Z"
+      },
+      "result": {
+        "agent_id": "019ec562-7a63-7e43-a660-9341477845f9",
+        "backend_used": "built-in image tool",
+        "selected_source": "/root/.codex/generated_images/019ec562-7a63-7e43-a660-9341477845f9/ig_0bf96725f893e09b016a2e6f56c394819782ad8ba5865ab0b8.png",
+        "selected_source_sha256": "88a5de8928b15e67a95b26e114c68fd8810e40a7ad57767b539e2395e1d9677b",
+        "final_image": "origin_image/slide_05.png",
+        "final_image_sha256": "88a5de8928b15e67a95b26e114c68fd8810e40a7ad57767b539e2395e1d9677b",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Text readable; style matches the approved sample; comparison labels are clear and not truncated.",
+        "recorded_at": "2026-06-14T09:11:00Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_06",
+      "number": 6,
+      "title": "A Simple Analogy",
+      "job": "prompts/slide_06.json",
+      "out": "origin_image/slide_06.png",
+      "input_images": [
+        {
+          "path": "/root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match palette, typography mood, diagram clarity, and density only; do not copy the exact layout unless requested"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "019ec562-7ab2-7a52-9d68-66f3282322c8",
+        "agent_nickname": "Darwin",
+        "prompt": "prompts/slide_06.json",
+        "prompt_sha256": "b1cb53167b1fca5777abae7c3dd9830a0cbd4a3825525243379bb128474f91a1",
+        "dispatched_at": "2026-06-14T09:07:26Z"
+      },
+      "result": {
+        "agent_id": "019ec562-7ab2-7a52-9d68-66f3282322c8",
+        "backend_used": "built-in image tool",
+        "selected_source": "/root/.codex/generated_images/019ec562-7ab2-7a52-9d68-66f3282322c8/ig_0118f6148891a07c016a2e6f4785f48190bb2754824ff95f58.png",
+        "selected_source_sha256": "a76c203a4b1a19c134d77847535aef3a9aac8008a0db2308505dd401feeac330",
+        "final_image": "origin_image/slide_06.png",
+        "final_image_sha256": "a76c203a4b1a19c134d77847535aef3a9aac8008a0db2308505dd401feeac330",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Text readable; style matches the approved sample; analogy and AI mapping are clear.",
+        "recorded_at": "2026-06-14T09:11:00Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_07",
+      "number": 7,
+      "title": "Normal Decoding",
+      "job": "prompts/slide_07.json",
+      "out": "origin_image/slide_07.png",
+      "input_images": [
+        {
+          "path": "/root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match palette, typography mood, diagram clarity, and density only; do not copy the exact layout unless requested"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "019ec568-1de1-7722-8db9-808695188d1c",
+        "agent_nickname": "Hume",
+        "prompt": "prompts/slide_07.json",
+        "prompt_sha256": "546c064e03a54b84cbc7dbca4e31dc9d903160b2ee669a421ed124102e8e0d52",
+        "dispatched_at": "2026-06-14T09:13:36Z"
+      },
+      "result": {
+        "agent_id": "019ec568-1de1-7722-8db9-808695188d1c",
+        "backend_used": "built-in image tool",
+        "selected_source": "/root/.codex/generated_images/019ec568-1de1-7722-8db9-808695188d1c/ig_0914f979ca404152016a2e70b9d42481969637123f03b003a1.png",
+        "selected_source_sha256": "e8f4680d520c7f66f408b04b26d2d30d07d7af8d85a24b29d9f15edd5919908c",
+        "final_image": "origin_image/slide_07.png",
+        "final_image_sha256": "e8f4680d520c7f66f408b04b26d2d30d07d7af8d85a24b29d9f15edd5919908c",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Text readable; style matches approved sample; normal decoding one-token-at-a-time message is accurate.",
+        "recorded_at": "2026-06-14T09:15:38Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_08",
+      "number": 8,
+      "title": "Speculative Decoding",
+      "job": "prompts/slide_08.json",
+      "out": "origin_image/slide_08.png",
+      "input_images": [
+        {
+          "path": "/root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match palette, typography mood, diagram clarity, and density only; do not copy the exact layout unless requested"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "accepted",
+      "dispatch": null,
+      "result": {
+        "final_image": "origin_image/slide_08.png",
+        "accepted_sample": true
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_09",
+      "number": 9,
+      "title": "Does It Hurt Quality?",
+      "job": "prompts/slide_09.json",
+      "out": "origin_image/slide_09.png",
+      "input_images": [
+        {
+          "path": "/root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match palette, typography mood, diagram clarity, and density only; do not copy the exact layout unless requested"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "019ec568-1e05-72b1-ab87-5d6daadce275",
+        "agent_nickname": "Wegener",
+        "prompt": "prompts/slide_09.json",
+        "prompt_sha256": "552b9778534139c9ab60460db7aba21eaeb95dc1bf50287aeaf656bb40c02b90",
+        "dispatched_at": "2026-06-14T09:13:36Z"
+      },
+      "result": {
+        "agent_id": "019ec568-1e05-72b1-ab87-5d6daadce275",
+        "backend_used": "built-in image tool",
+        "selected_source": "/root/.codex/generated_images/019ec568-1e05-72b1-ab87-5d6daadce275/ig_0c6fe1f2b93c2537016a2e71ba18c48193a616545a49e62a6c.png",
+        "selected_source_sha256": "e1f15ff9350fa8083be8058732acc864bd82e2ac8ff42b162f11d1025b01501f",
+        "final_image": "origin_image/slide_09.png",
+        "final_image_sha256": "e1f15ff9350fa8083be8058732acc864bd82e2ac8ff42b162f11d1025b01501f",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Text readable; style matches approved sample; rejected token is replaced with for, matching the approved example.",
+        "recorded_at": "2026-06-14T09:20:16Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_10",
+      "number": 10,
+      "title": "Where It Is Useful",
+      "job": "prompts/slide_10.json",
+      "out": "origin_image/slide_10.png",
+      "input_images": [
+        {
+          "path": "/root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match palette, typography mood, diagram clarity, and density only; do not copy the exact layout unless requested"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "019ec568-1e2b-7731-8ce1-dcd300a26618",
+        "agent_nickname": "Chandrasekhar",
+        "prompt": "prompts/slide_10.json",
+        "prompt_sha256": "c221d8a8b3db0ed2010fa85357f1f720523f871b42a55fdbc2a33cc6820ce977",
+        "dispatched_at": "2026-06-14T09:13:36Z"
+      },
+      "result": {
+        "agent_id": "019ec568-1e2b-7731-8ce1-dcd300a26618",
+        "backend_used": "built-in image tool",
+        "selected_source": "/root/.codex/generated_images/019ec568-1e2b-7731-8ce1-dcd300a26618/ig_0ee9d0783bc9d9f9016a2e70d0678081959e138e37b57cc9fd.png",
+        "selected_source_sha256": "9770d8183eb9aec777c3b6e9f97f2536701646e2f30da63feb4ac0b354be1287",
+        "final_image": "origin_image/slide_10.png",
+        "final_image_sha256": "9770d8183eb9aec777c3b6e9f97f2536701646e2f30da63feb4ac0b354be1287",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Text readable; style matches approved sample; application grid is clear.",
+        "recorded_at": "2026-06-14T09:17:23Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_11",
+      "number": 11,
+      "title": "When It Works Best",
+      "job": "prompts/slide_11.json",
+      "out": "origin_image/slide_11.png",
+      "input_images": [
+        {
+          "path": "/root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match palette, typography mood, diagram clarity, and density only; do not copy the exact layout unless requested"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "019ec568-1e83-7662-b030-7986f48317f8",
+        "agent_nickname": "Jason",
+        "prompt": "prompts/slide_11.json",
+        "prompt_sha256": "376143c7985d81fc34a4ce7504d570102359edbd2ccecf86b5e0fb7d669dd7a2",
+        "dispatched_at": "2026-06-14T09:13:36Z"
+      },
+      "result": {
+        "agent_id": "019ec568-1e83-7662-b030-7986f48317f8",
+        "backend_used": "built-in image tool",
+        "selected_source": "/root/.codex/generated_images/019ec568-1e83-7662-b030-7986f48317f8/ig_07eea5a8852b4aad016a2e70cdeb348194888df5fadc05cd3e.png",
+        "selected_source_sha256": "fbce262b85e33f2d4b27d3e9bcf83f0bbc6d6f8559dfdc7e594aef7967c7232a",
+        "final_image": "origin_image/slide_11.png",
+        "final_image_sha256": "fbce262b85e33f2d4b27d3e9bcf83f0bbc6d6f8559dfdc7e594aef7967c7232a",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Text readable; style matches approved sample; trade-off message is accurate.",
+        "recorded_at": "2026-06-14T09:17:23Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_12",
+      "number": 12,
+      "title": "Takeaway",
+      "job": "prompts/slide_12.json",
+      "out": "origin_image/slide_12.png",
+      "input_images": [
+        {
+          "path": "/root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match palette, typography mood, diagram clarity, and density only; do not copy the exact layout unless requested"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "019ec568-1ee4-73d1-b3d2-54d51a1117e5",
+        "agent_nickname": "Averroes",
+        "prompt": "prompts/slide_12.json",
+        "prompt_sha256": "8b3ddbceeefb2ec5435d5d7a2bda774401cf52603e05f494b1bec8a178eb268c",
+        "dispatched_at": "2026-06-14T09:13:36Z"
+      },
+      "result": {
+        "agent_id": "019ec568-1ee4-73d1-b3d2-54d51a1117e5",
+        "backend_used": "built-in image tool",
+        "selected_source": "/root/.codex/generated_images/019ec568-1ee4-73d1-b3d2-54d51a1117e5/ig_0769d47970f93106016a2e70ba40f881978b5e78a98eacf758.png",
+        "selected_source_sha256": "ada08e62f08d62c3e6399cfd15cf4dbd1718d3c2b22473e551e82780d98e5c34",
+        "final_image": "origin_image/slide_12.png",
+        "final_image_sha256": "ada08e62f08d62c3e6399cfd15cf4dbd1718d3c2b22473e551e82780d98e5c34",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Text readable; style matches approved sample; closing summary is clear.",
+        "recorded_at": "2026-06-14T09:17:23Z"
+      },
+      "blocker": null
+    }
+  ],
+  "updated_at": "2026-06-14T09:20:16Z"
+}

@@ -502,6 +502,8 @@ class ServerArgs:
     speculative_csd_enabled: bool = False
     speculative_csd_table_path: Optional[str] = None
     speculative_csd_freq_threshold: int = 6
+    speculative_csd_key_selection_strategy: str = "frequency"
+    speculative_csd_score_threshold: float = 0.0
     speculative_csd_prob_ratio: float = 0.01
     speculative_csd_dynamic_update: bool = False
     speculative_csd_dynamic_update_ignore_prob_ratio: bool = False
@@ -510,6 +512,7 @@ class ServerArgs:
     speculative_csd_rebuild_threshold: int = 4096
     speculative_csd_rebuild_top_keep: Optional[float] = None
     speculative_csd_force_accept_disabled: bool = False
+    speculative_csd_force_accept_entropy_threshold: float = -1.0
     speculative_token_map: Optional[str] = None
     speculative_attention_mode: str = "prefill"
     speculative_draft_attention_backend: Optional[str] = None
@@ -3004,12 +3007,30 @@ class ServerArgs:
 
         if self.speculative_csd_enabled:
             if self.speculative_csd_freq_threshold < 1:
+                raise ValueError("--speculative-csd-freq-threshold must be at least 1.")
+            if self.speculative_csd_key_selection_strategy not in (
+                "frequency",
+                "count_squared_over_total",
+                "above_uniform_share",
+            ):
                 raise ValueError(
-                    "--speculative-csd-freq-threshold must be at least 1."
+                    "--speculative-csd-key-selection-strategy must be one of: "
+                    "frequency, count_squared_over_total, above_uniform_share."
+                )
+            if self.speculative_csd_score_threshold < 0:
+                raise ValueError(
+                    "--speculative-csd-score-threshold must be non-negative."
                 )
             if not 0 < self.speculative_csd_prob_ratio <= 1:
                 raise ValueError(
                     "--speculative-csd-prob-ratio must be in the range (0, 1]."
+                )
+            if (
+                self.speculative_csd_force_accept_entropy_threshold < 0
+                and self.speculative_csd_force_accept_entropy_threshold != -1
+            ):
+                raise ValueError(
+                    "--speculative-csd-force-accept-entropy-threshold must be -1 or non-negative."
                 )
             if (
                 self.speculative_csd_rebuild_top_keep is not None
@@ -3038,9 +3059,7 @@ class ServerArgs:
                 else:
                     self.speculative_csd_delta_capacity = 1 << 20
             if self.speculative_csd_delta_capacity < 1:
-                raise ValueError(
-                    "--speculative-csd-delta-capacity must be at least 1."
-                )
+                raise ValueError("--speculative-csd-delta-capacity must be at least 1.")
             if (
                 self.speculative_csd_dynamic_update
                 and self.speculative_csd_delta_save_path is None
@@ -4901,6 +4920,25 @@ class ServerArgs:
             help="Minimum pair frequency required before CSD may force-accept a rejected draft token.",
         )
         parser.add_argument(
+            "--speculative-csd-key-selection-strategy",
+            choices=("frequency", "count_squared_over_total", "above_uniform_share"),
+            default=ServerArgs.speculative_csd_key_selection_strategy,
+            help=(
+                "Strategy used to select and rank CSD hash keys: raw pair "
+                "frequency, count(draft, replacement)^2 / count(draft, *), "
+                "or share(draft, replacement) > 1 / num_replacements(draft)."
+            ),
+        )
+        parser.add_argument(
+            "--speculative-csd-score-threshold",
+            type=float,
+            default=ServerArgs.speculative_csd_score_threshold,
+            help=(
+                "Minimum count^2 / count(draft, *) score when using the "
+                "count_squared_over_total key-selection strategy."
+            ),
+        )
+        parser.add_argument(
             "--speculative-csd-prob-ratio",
             type=float,
             default=ServerArgs.speculative_csd_prob_ratio,
@@ -4953,6 +4991,15 @@ class ServerArgs:
             action="store_true",
             default=ServerArgs.speculative_csd_force_accept_disabled,
             help="Record CSD candidate pairs without changing acceptance decisions.",
+        )
+        parser.add_argument(
+            "--speculative-csd-force-accept-entropy-threshold",
+            type=float,
+            default=ServerArgs.speculative_csd_force_accept_entropy_threshold,
+            help=(
+                "Disable CSD force accept when target entropy is greater than "
+                "this threshold. Use -1 to disable the entropy gate."
+            ),
         )
         parser.add_argument(
             "--speculative-token-map",

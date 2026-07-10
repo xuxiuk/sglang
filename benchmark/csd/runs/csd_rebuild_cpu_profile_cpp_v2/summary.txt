@@ -1,0 +1,7 @@
+py-spy> Sampling process 100 times a second. Press Control-C to exit.
+
+{'table_entries': 1052300, 'initial_filtered_keys': 34305, 'final_hash_entries': 38150, 'iterations': 1000, 'elapsed_sec': 4.955, 'rebuild_mean_ms': 4.877, 'rebuild_max_ms': 8.731, 'main_heartbeat_count': 2016, 'main_heartbeat_p99_gap_ms': 4.57, 'main_heartbeat_max_gap_ms': 7.29}
+
+py-spy> Stopped sampling because process exited
+py-spy> Wrote chrome trace to '/root/sglang/benchmark/csd/runs/csd_rebuild_cpu_profile_cpp_v2/csd_rebuild_gil.chrometrace.json'. Samples: 794 Errors: 0
+py-spy> Visit chrome://tracing or https://ui.perfetto.dev/ to view

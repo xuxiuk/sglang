@@ -55,6 +55,7 @@ void tree_speculative_sampling_target_only(
     bool csd_dynamic_update_ignore_prob_ratio,
     bool csd_force_accept_disabled,
     double csd_logit_margin,
+    double csd_force_accept_entropy_threshold,
     double threshold_single,
     double threshold_acc,
     bool deterministic = true) {
@@ -218,6 +219,7 @@ void tree_speculative_sampling_target_only(
       csd_dynamic_update_ignore_prob_ratio,
       csd_force_accept_disabled,
       static_cast<float>(csd_logit_margin),
+      static_cast<float>(csd_force_accept_entropy_threshold),
       stream);
 
   TORCH_CHECK(

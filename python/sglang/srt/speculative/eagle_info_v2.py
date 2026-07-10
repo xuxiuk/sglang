@@ -352,7 +352,9 @@ class EagleVerifyInputV2Mixin:
                     if csd_runtime and csd_runtime.delta_buffer is not None
                     else 0
                 ),
-                csd_enabled=bool(csd_runtime and csd_runtime.enabled and csd_runtime.has_table),
+                csd_enabled=bool(
+                    csd_runtime and csd_runtime.enabled and csd_runtime.has_table
+                ),
                 csd_dynamic_update=bool(
                     csd_runtime
                     and csd_runtime.dynamic_update
@@ -442,7 +444,9 @@ class EagleVerifyInputV2Mixin:
                     if csd_runtime and csd_runtime.delta_buffer is not None
                     else 0
                 ),
-                csd_enabled=bool(csd_runtime and csd_runtime.enabled and csd_runtime.has_table),
+                csd_enabled=bool(
+                    csd_runtime and csd_runtime.enabled and csd_runtime.has_table
+                ),
                 csd_dynamic_update=bool(
                     csd_runtime
                     and csd_runtime.dynamic_update
@@ -460,6 +464,7 @@ class EagleVerifyInputV2Mixin:
                 csd_logit_margin=math.log(
                     get_global_server_args().speculative_csd_prob_ratio
                 ),
+                csd_force_accept_entropy_threshold=get_global_server_args().speculative_csd_force_accept_entropy_threshold,
                 threshold_single=get_global_server_args().speculative_accept_threshold_single,
                 threshold_acc=get_global_server_args().speculative_accept_threshold_acc,
                 deterministic=True,

@@ -1,0 +1,357 @@
+{
+  "deck_name": "speculative_decoding_8min_codex_ppt",
+  "language": "English",
+  "goal": "Explain speculative decoding to a general English-class audience in an 8-minute group presentation, with four speakers sharing the talk equally.",
+  "selected_image_backend": "built-in image tool",
+  "max_concurrent_slides": 6,
+  "sample_generation_method": {
+    "backend_used": "built-in image tool",
+    "tool_name": "image_gen",
+    "mode": "generate",
+    "model_config": "built-in default; 16:9 landscape image",
+    "prompt_source": "approved slide 8 sample prompt showing small model draft tokens, large model verification, accepted tokens, rejected draft token, and replacement token from the large model",
+    "approved_sample_path": "/root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png",
+    "input_context_preparation": "no required source image assets; use approved sample slide as style reference for later slides",
+    "handoff_rule": "Use this same built-in image_gen generate workflow; return a blocker if unavailable."
+  },
+  "style": {
+    "name": "Clean Technology Explainer",
+    "visual_direction": "bright off-white classroom-friendly technology explainer; clear diagrams, friendly AI/chat icons, process arrows, and simple comparison layouts",
+    "color_palette": "warm off-white background, deep navy titles, medium blue process arrows and outlines, green acceptance highlights, red rejection highlights only for errors, charcoal body text",
+    "typography": "large bold English headings, compact readable body text, strong hierarchy, no negative letter spacing, no tiny labels",
+    "texture_and_finish": "flat vector-like full-slide image with subtle shadows and soft rounded rectangles, polished but not corporate-heavy",
+    "deck_consistency": "same palette, typography, icon language, spacing, and clean low-clutter mood across all slides"
+  },
+  "approved_style_reference": {
+    "path": "/root/sglang/presentations/speculative_decoding_8min_codex_ppt/origin_image/slide_08.png",
+    "role": "approved sample slide style reference",
+    "fidelity": "match palette, typography mood, diagram clarity, and density only; do not copy the exact layout unless requested"
+  },
+  "deck_context": {
+    "source_summary": "Based mainly on Hugging Face's article about assisted generation, with the original speculative decoding paper used for credibility. The core mechanism is simple: a smaller draft model proposes several tokens quickly, and the larger target model verifies them, accepting correct guesses and replacing the first wrong guess.",
+    "core_claim": "Speculative decoding speeds up text generation by letting a fast helper model draft tokens while the large model still controls the final output.",
+    "canonical_terms": [
+      "speculative decoding",
+      "assisted generation",
+      "draft model",
+      "target model",
+      "token",
+      "verification",
+      "accepted token",
+      "rejected token"
+    ],
+    "speaker_split": "Speaker 1 covers slides 1-3, Speaker 2 covers slides 4-6, Speaker 3 covers slides 7-9, and Speaker 4 covers slides 10-12."
+  },
+  "slides": [
+    {
+      "number": 1,
+      "title": "How AI Answers Faster",
+      "role": "cover",
+      "intent": "Open with a simple question and name the topic.",
+      "key_points": [
+        "AI chatbots can be smart but still feel slow.",
+        "Today we explain speculative decoding.",
+        "No formulas: just the main idea."
+      ],
+      "speaker_focus": "Speaker 1 opens the presentation and frames the topic for non-technical classmates.",
+      "local_context": {
+        "required_background": "This is an English class presentation, not a technical research talk. Keep the cover welcoming and easy to understand."
+      },
+      "layout": {
+        "composition": "large title at top left, subtitle line below, friendly AI chat window illustration on the right with message bubbles appearing quickly",
+        "content_zones": "title zone, short thesis zone, large visual zone",
+        "relationship_to_previous_slide": "opening slide"
+      },
+      "visual_elements": {
+        "main_visual": "clean chatbot interface with a small speed symbol and simple AI assistant icon",
+        "supporting_elements": "three small labels: Smart, Slow?, Faster"
+      },
+      "constraints": [
+        "Do not render speaker names or slide numbers.",
+        "Keep text sparse and readable."
+      ]
+    },
+    {
+      "number": 2,
+      "title": "The Problem: One Piece at a Time",
+      "role": "context/problem",
+      "intent": "Explain token-by-token generation before introducing the speedup.",
+      "key_points": [
+        "Large language models write text step by step.",
+        "Each next token needs another model step.",
+        "Many repeated steps create waiting time."
+      ],
+      "speaker_focus": "Speaker 1 explains what a token is using a sentence-building timeline.",
+      "local_context": {
+        "required_background": "Use 'token' as a small piece of text, like a word or part of a word. Avoid mathematical notation."
+      },
+      "layout": {
+        "composition": "horizontal timeline across the center showing a sentence growing token by token, with one large model box repeated under each token",
+        "content_zones": "title top, timeline center, short consequence callout bottom",
+        "relationship_to_previous_slide": "new explanatory layout"
+      },
+      "visual_elements": {
+        "main_visual": "sentence tokens appearing one at a time: The | cat | sat | down",
+        "supporting_elements": "clock icons under repeated model calls and a small 'wait' callout"
+      },
+      "constraints": [
+        "No formulas.",
+        "Do not render speaker names or slide numbers."
+      ]
+    },
+    {
+      "number": 3,
+      "title": "Why Speed Matters",
+      "role": "motivation",
+      "intent": "Connect lower latency to everyday user experience and cost.",
+      "key_points": [
+        "Faster answers feel more natural in conversation.",
+        "Lower latency helps chat, writing, and coding tools.",
+        "Faster generation can reduce computing cost."
+      ],
+      "speaker_focus": "Speaker 1 closes the first section by making speed feel relevant to classmates.",
+      "layout": {
+        "composition": "split contrast: left side shows waiting user and slow loading dots; right side shows smooth conversation and lower cost icon",
+        "content_zones": "title top, two comparison panels, concise takeaway ribbon",
+        "relationship_to_previous_slide": "contrast layout after process baseline"
+      },
+      "visual_elements": {
+        "main_visual": "before and after user experience: slow response versus quick response",
+        "supporting_elements": "chat, pen, code, and cost icons"
+      },
+      "constraints": [
+        "Keep panels visually balanced.",
+        "Do not render speaker names or slide numbers."
+      ]
+    },
+    {
+      "number": 4,
+      "title": "The Core Idea",
+      "role": "concept explanation",
+      "intent": "Introduce assisted generation as draft, verify, answer.",
+      "key_points": [
+        "A small model quickly drafts several next tokens.",
+        "A large model checks the draft.",
+        "The large model still controls the final answer."
+      ],
+      "speaker_focus": "Speaker 2 introduces the main mechanism in one sentence: small model drafts, large model verifies.",
+      "layout": {
+        "composition": "three-step process diagram from left to right: Draft -> Verify -> Answer",
+        "content_zones": "title top, process diagram center, short control statement bottom",
+        "relationship_to_previous_slide": "first core mechanism slide"
+      },
+      "visual_elements": {
+        "main_visual": "small blue model box sends token batch to larger green model checker, then final answer bubble",
+        "supporting_elements": "green check marks for accepted tokens and a shield icon for quality control"
+      },
+      "constraints": [
+        "Do not overfill the slide.",
+        "Do not render speaker names or slide numbers."
+      ]
+    },
+    {
+      "number": 5,
+      "title": "Draft Model vs Target Model",
+      "role": "comparison",
+      "intent": "Clarify the two model roles without suggesting the small model replaces the large one.",
+      "key_points": [
+        "The draft model is smaller and faster.",
+        "The target model is larger and more reliable.",
+        "They work as a team, not replacements."
+      ],
+      "speaker_focus": "Speaker 2 contrasts the helper role with the decision-maker role.",
+      "layout": {
+        "composition": "two-column comparison with draft model on the left and target model on the right, connected by a teamwork arrow",
+        "content_zones": "title top, comparison cards center, team message bottom",
+        "relationship_to_previous_slide": "comparison layout following process overview"
+      },
+      "visual_elements": {
+        "main_visual": "fast helper model icon and careful checker model icon",
+        "supporting_elements": "speedometer for draft model, checklist/shield for target model"
+      },
+      "constraints": [
+        "Make labels exact: Draft Model and Target Model.",
+        "Do not render speaker names or slide numbers."
+      ]
+    },
+    {
+      "number": 6,
+      "title": "A Simple Analogy",
+      "role": "analogy",
+      "intent": "Use a student and teacher analogy to make the mechanism memorable.",
+      "key_points": [
+        "Like a student writing a quick draft.",
+        "The teacher checks the draft.",
+        "Correct parts stay; wrong parts are fixed."
+      ],
+      "speaker_focus": "Speaker 2 explains accepted and rejected tokens through the analogy.",
+      "layout": {
+        "composition": "student notebook on left, teacher review on right, AI mapping labels underneath",
+        "content_zones": "title top, analogy illustration center, mapping strip bottom",
+        "relationship_to_previous_slide": "friendly analogy slide"
+      },
+      "visual_elements": {
+        "main_visual": "notebook with green check marks and one red correction, teacher pen pointing to correction",
+        "supporting_elements": "small labels: Student = draft model, Teacher = target model"
+      },
+      "constraints": [
+        "Keep the analogy respectful and simple.",
+        "Do not render speaker names or slide numbers."
+      ]
+    },
+    {
+      "number": 7,
+      "title": "Normal Decoding",
+      "role": "process baseline",
+      "intent": "Show the old workflow where the large model predicts one token at a time.",
+      "key_points": [
+        "The large model predicts one next token.",
+        "Then it repeats the same process.",
+        "Accurate, but often slow."
+      ],
+      "speaker_focus": "Speaker 3 sets up the comparison with speculative decoding.",
+      "layout": {
+        "composition": "repeated sequence of large model boxes, each producing exactly one token, with a slow clock at the end",
+        "content_zones": "title top, repeated workflow center, takeaway bottom",
+        "relationship_to_previous_slide": "technical process baseline before sample workflow"
+      },
+      "visual_elements": {
+        "main_visual": "Large Model -> token 1, Large Model -> token 2, Large Model -> token 3",
+        "supporting_elements": "single-token labels and subtle waiting dots"
+      },
+      "constraints": [
+        "Do not show the small model on this slide.",
+        "Do not render speaker names or slide numbers."
+      ]
+    },
+    {
+      "number": 8,
+      "title": "Speculative Decoding",
+      "role": "process comparison",
+      "intent": "Approved sample slide showing the draft-and-verify workflow with a concrete token example.",
+      "key_points": [
+        "The small model guesses several tokens first.",
+        "The large model verifies the guessed tokens together.",
+        "Accepted guesses move forward; a wrong guess is replaced."
+      ],
+      "speaker_focus": "Speaker 3 walks through the sample: prompt, draft tokens, verification, accepted tokens, rejected token, and replacement.",
+      "local_context": {
+        "required_background": "Use the approved concrete example: prompt 'Today I ate a', draft tokens 'slice', 'of', 'pizza', 'yesterday', accepted tokens 'slice', 'of', 'pizza', rejected draft 'yesterday', replacement token 'for'."
+      },
+      "layout": {
+        "composition": "approved sample slide already generated",
+        "relationship_to_previous_slide": "core demonstration slide"
+      },
+      "visual_elements": {
+        "main_visual": "approved sample image"
+      },
+      "constraints": [
+        "This slide is already approved and should not be regenerated."
+      ],
+      "sample_approved": true
+    },
+    {
+      "number": 9,
+      "title": "Does It Hurt Quality?",
+      "role": "trust/quality",
+      "intent": "Answer the main audience concern about whether speed sacrifices correctness.",
+      "key_points": [
+        "The small model only suggests.",
+        "The large model accepts good guesses and rejects bad ones.",
+        "The final output can preserve the large model's behavior."
+      ],
+      "speaker_focus": "Speaker 3 explains that the target model remains in control.",
+      "local_context": {
+        "required_background": "Avoid overstating. Say that in the standard method, verification is designed so the target model controls the output distribution."
+      },
+      "layout": {
+        "composition": "checkpoint diagram with draft tokens entering a target model gate; green accepted path and red rejected path",
+        "content_zones": "title top, gate diagram center, trust statement bottom",
+        "relationship_to_previous_slide": "same mechanism, focused on quality guarantee"
+      },
+      "visual_elements": {
+        "main_visual": "large model checkpoint with accepted green tokens and one rejected red token",
+        "supporting_elements": "label: Target model stays in control"
+      },
+      "constraints": [
+        "Keep the claim cautious and clear.",
+        "Do not render speaker names or slide numbers."
+      ]
+    },
+    {
+      "number": 10,
+      "title": "Where It Is Useful",
+      "role": "applications",
+      "intent": "Connect speculative decoding to real interactive AI systems.",
+      "key_points": [
+        "Useful for chatbots and writing assistants.",
+        "Useful for coding assistants and other interactive AI tools.",
+        "Most helpful when users care about quick response time."
+      ],
+      "speaker_focus": "Speaker 4 shifts from mechanism to applications.",
+      "layout": {
+        "composition": "app grid on the left flowing into a fast response card on the right",
+        "content_zones": "title top, use-case grid, fast-response result",
+        "relationship_to_previous_slide": "application slide after quality explanation"
+      },
+      "visual_elements": {
+        "main_visual": "four app tiles: Chatbots, Writing Assistants, Coding Assistants, Support & Search",
+        "supporting_elements": "arrow to speedometer labeled Fast Response"
+      },
+      "constraints": [
+        "Do not render speaker names or slide numbers.",
+        "Keep labels short."
+      ]
+    },
+    {
+      "number": 11,
+      "title": "When It Works Best",
+      "role": "trade-off",
+      "intent": "Explain the conditions for speedup and avoid overclaiming.",
+      "key_points": [
+        "The draft model must be much faster than the large model.",
+        "The draft model must guess reasonably well.",
+        "If guesses are often wrong, speedup becomes smaller."
+      ],
+      "speaker_focus": "Speaker 4 explains why the method is useful but not magic.",
+      "layout": {
+        "composition": "balance scale in the center with a fast draft-model condition and a good-guess condition, plus red warning note below",
+        "content_zones": "title top, condition cards left and right, caveat bottom",
+        "relationship_to_previous_slide": "trade-off slide"
+      },
+      "visual_elements": {
+        "main_visual": "balance scale with speedometer and target icons",
+        "supporting_elements": "green checks for good conditions and red warning for bad guesses"
+      },
+      "constraints": [
+        "Do not render speaker names or slide numbers.",
+        "Make caveat readable but not scary."
+      ]
+    },
+    {
+      "number": 12,
+      "title": "Takeaway",
+      "role": "summary/closing",
+      "intent": "End with one memorable sentence and the team split feeling complete.",
+      "key_points": [
+        "Speculative decoding means draft, verify, answer.",
+        "It uses a fast helper model without replacing the large model.",
+        "The result is faster AI responses with the large model still in control."
+      ],
+      "speaker_focus": "Speaker 4 closes the presentation and invites questions if needed.",
+      "layout": {
+        "composition": "large three-step loop in the center: Draft -> Verify -> Answer, with a short final sentence below",
+        "content_zones": "title top, loop center, closing message bottom",
+        "relationship_to_previous_slide": "summary slide"
+      },
+      "visual_elements": {
+        "main_visual": "clean loop diagram with small model, large model, and final answer icons",
+        "supporting_elements": "green final badge: Faster, still controlled by the large model"
+      },
+      "constraints": [
+        "Do not render speaker names or slide numbers.",
+        "Make it feel like a closing, not a new technical slide."
+      ]
+    }
+  ]
+}

@@ -401,6 +401,7 @@ void tree_speculative_sampling_target_only(
     bool csd_dynamic_update_ignore_prob_ratio,
     bool csd_force_accept_disabled,
     double csd_logit_margin,
+    double csd_force_accept_entropy_threshold,
     double threshold_single = 1,
     double threshold_acc = 1,
     bool deterministic = true);

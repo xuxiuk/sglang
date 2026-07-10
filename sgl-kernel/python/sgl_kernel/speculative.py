@@ -30,6 +30,7 @@ def tree_speculative_sampling_target_only(
     csd_dynamic_update_ignore_prob_ratio: bool = False,
     csd_force_accept_disabled: bool = False,
     csd_logit_margin: float | None = None,
+    csd_force_accept_entropy_threshold: float = -1.0,
     csd_prob_ratio: float = 0.01,
     threshold_single: float = 1.0,
     threshold_acc: float = 1.0,
@@ -42,17 +43,29 @@ def tree_speculative_sampling_target_only(
     if csd_logit_margin is None:
         csd_logit_margin = math.log(csd_prob_ratio)
     if csd_table_keys is None:
-        csd_table_keys = torch.empty((1,), dtype=torch.int64, device=target_probs.device)
+        csd_table_keys = torch.empty(
+            (1,), dtype=torch.int64, device=target_probs.device
+        )
     if csd_delta_pairs is None:
-        csd_delta_pairs = torch.empty((1,), dtype=torch.int64, device=target_probs.device)
+        csd_delta_pairs = torch.empty(
+            (1,), dtype=torch.int64, device=target_probs.device
+        )
     if csd_delta_counter is None:
-        csd_delta_counter = torch.zeros((1,), dtype=torch.int32, device=target_probs.device)
+        csd_delta_counter = torch.zeros(
+            (1,), dtype=torch.int32, device=target_probs.device
+        )
     if csd_lookup_hit_ct is None:
-        csd_lookup_hit_ct = torch.zeros((1,), dtype=torch.int64, device=target_probs.device)
+        csd_lookup_hit_ct = torch.zeros(
+            (1,), dtype=torch.int64, device=target_probs.device
+        )
     if csd_forced_accept_ct is None:
-        csd_forced_accept_ct = torch.zeros((1,), dtype=torch.int64, device=target_probs.device)
+        csd_forced_accept_ct = torch.zeros(
+            (1,), dtype=torch.int64, device=target_probs.device
+        )
     if csd_delta_pair_ct is None:
-        csd_delta_pair_ct = torch.zeros((1,), dtype=torch.int64, device=target_probs.device)
+        csd_delta_pair_ct = torch.zeros(
+            (1,), dtype=torch.int64, device=target_probs.device
+        )
 
     torch.ops.sgl_kernel.tree_speculative_sampling_target_only.default(
         predicts,
@@ -81,6 +94,7 @@ def tree_speculative_sampling_target_only(
         csd_dynamic_update_ignore_prob_ratio,
         csd_force_accept_disabled,
         csd_logit_margin,
+        csd_force_accept_entropy_threshold,
         threshold_single,
         threshold_acc,
         deterministic,
@@ -117,22 +131,36 @@ def verify_tree_greedy(
         if csd_enabled:
             raise ValueError("target_logits is required when csd_enabled is True")
         target_logits = torch.empty(
-            (*target_predict.shape, 1), dtype=torch.float32, device=target_predict.device
+            (*target_predict.shape, 1),
+            dtype=torch.float32,
+            device=target_predict.device,
         )
     if csd_logit_margin is None:
         csd_logit_margin = math.log(csd_prob_ratio)
     if csd_table_keys is None:
-        csd_table_keys = torch.empty((1,), dtype=torch.int64, device=target_predict.device)
+        csd_table_keys = torch.empty(
+            (1,), dtype=torch.int64, device=target_predict.device
+        )
     if csd_delta_pairs is None:
-        csd_delta_pairs = torch.empty((1,), dtype=torch.int64, device=target_predict.device)
+        csd_delta_pairs = torch.empty(
+            (1,), dtype=torch.int64, device=target_predict.device
+        )
     if csd_delta_counter is None:
-        csd_delta_counter = torch.zeros((1,), dtype=torch.int32, device=target_predict.device)
+        csd_delta_counter = torch.zeros(
+            (1,), dtype=torch.int32, device=target_predict.device
+        )
     if csd_lookup_hit_ct is None:
-        csd_lookup_hit_ct = torch.zeros((1,), dtype=torch.int64, device=target_predict.device)
+        csd_lookup_hit_ct = torch.zeros(
+            (1,), dtype=torch.int64, device=target_predict.device
+        )
     if csd_forced_accept_ct is None:
-        csd_forced_accept_ct = torch.zeros((1,), dtype=torch.int64, device=target_predict.device)
+        csd_forced_accept_ct = torch.zeros(
+            (1,), dtype=torch.int64, device=target_predict.device
+        )
     if csd_delta_pair_ct is None:
-        csd_delta_pair_ct = torch.zeros((1,), dtype=torch.int64, device=target_predict.device)
+        csd_delta_pair_ct = torch.zeros(
+            (1,), dtype=torch.int64, device=target_predict.device
+        )
 
     torch.ops.sgl_kernel.verify_tree_greedy.default(
         predicts,

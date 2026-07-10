@@ -38,11 +38,11 @@ from lighteval.tasks.requests import Doc, SamplingMethod
 from lighteval.utils.cache_management import SampleCache, cached
 from lighteval.utils.imports import is_package_available, requires
 
-
 logger = logging.getLogger(__name__)
 
 if is_package_available("sglang"):
     from sglang import Engine
+
     try:
         from sglang.srt.utils.hf_transformers_utils import get_tokenizer
     except ImportError:
@@ -157,7 +157,10 @@ class SGLangModelConfig(ModelConfig):
     speculative_csd_enabled: bool = False
     speculative_csd_table_path: str | None = None
     speculative_csd_freq_threshold: PositiveInt | None = None
+    speculative_csd_key_selection_strategy: str = "frequency"
+    speculative_csd_score_threshold: float = 0.0
     speculative_csd_prob_ratio: PositiveFloat | None = None
+    speculative_csd_force_accept_entropy_threshold: float = -1.0
     speculative_csd_rebuild_top_keep: float | None = None
     port: PositiveInt | None = None
     speculative_csd_dynamic_update: bool = False
@@ -175,13 +178,16 @@ class SGLangModel(LightevalModel):
         """Initializes an SGLang model."""
         self.config = config
         self.use_chat_template = uses_chat_template(
-            model_name=self.config.model_name, override_chat_template=config.override_chat_template
+            model_name=self.config.model_name,
+            override_chat_template=config.override_chat_template,
         )
         self.data_parallel_size = config.dp_size
         self.tensor_parallel_size = config.tp_size
         self._add_special_tokens = config.add_special_tokens
         self._tokenizer = self._create_auto_tokenizer(config)
-        self._max_length = config.context_length if config.context_length is not None else None
+        self._max_length = (
+            config.context_length if config.context_length is not None else None
+        )
         self.model = self._create_auto_model(config)
         self.model_name = _simplify_name(config.model_name)
         self.model_sha = ""  # config.get_model_sha()
@@ -259,14 +265,23 @@ class SGLangModel(LightevalModel):
             "speculative_num_draft_tokens": config.speculative_num_draft_tokens,
             "speculative_csd_table_path": config.speculative_csd_table_path,
             "speculative_csd_freq_threshold": config.speculative_csd_freq_threshold,
+            "speculative_csd_key_selection_strategy": config.speculative_csd_key_selection_strategy,
+            "speculative_csd_score_threshold": config.speculative_csd_score_threshold,
             "speculative_csd_prob_ratio": config.speculative_csd_prob_ratio,
+            "speculative_csd_force_accept_entropy_threshold": config.speculative_csd_force_accept_entropy_threshold,
             "speculative_csd_rebuild_top_keep": config.speculative_csd_rebuild_top_keep,
             "port": config.port,
             "watchdog_timeout": config.watchdog_timeout,
             "mamba_scheduler_strategy": config.mamba_scheduler_strategy,
             "log_level": config.log_level,
         }
-        self.model_args.update({key: value for key, value in optional_model_args.items() if value is not None})
+        self.model_args.update(
+            {
+                key: value
+                for key, value in optional_model_args.items()
+                if value is not None
+            }
+        )
         if config.speculative_csd or config.speculative_csd_enabled:
             self.model_args["speculative_csd_enabled"] = True
         if config.speculative_csd_dynamic_update:
@@ -311,7 +326,9 @@ class SGLangModel(LightevalModel):
         self,
         docs: list[Doc],
     ) -> list[ModelResponse]:
-        dataset = GenerativeTaskDataset(requests=docs, num_dataset_splits=self.DATASET_SPLITS)
+        dataset = GenerativeTaskDataset(
+            requests=docs, num_dataset_splits=self.DATASET_SPLITS
+        )
         results = []
 
         for split in tqdm(
@@ -326,11 +343,16 @@ class SGLangModel(LightevalModel):
             else:
                 stop_tokens = split[0].stop_sequences
 
-            max_new_tokens = self.config.generation_parameters.max_new_tokens or split[0].generation_size
+            max_new_tokens = (
+                self.config.generation_parameters.max_new_tokens
+                or split[0].generation_size
+            )
             num_samples = split[0].num_samples
 
             contexts = [self.prompt_manager.prepare_prompt(doc) for doc in split]
-            tokenized = self.tokenizer(contexts, add_special_tokens=self.add_special_tokens)
+            tokenized = self.tokenizer(
+                contexts, add_special_tokens=self.add_special_tokens
+            )
 
             # The main question for this step is the following:
             # Would we rather truncate the prompt to allow generation to go to max_new_tokens, at the risk
@@ -451,8 +473,12 @@ class SGLangModel(LightevalModel):
             tokenized_contexts_batch = []
 
             for context, doc in zip(contexts, dataset):
-                tokenized_contexts, tokenized_continuations = self.tok_encode_pair(context, doc.choices, pairwise=True)
-                for tokenized_context, tokenized_continuation in zip(tokenized_contexts, tokenized_continuations):
+                tokenized_contexts, tokenized_continuations = self.tok_encode_pair(
+                    context, doc.choices, pairwise=True
+                )
+                for tokenized_context, tokenized_continuation in zip(
+                    tokenized_contexts, tokenized_continuations
+                ):
                     inputs.append(tokenized_context + tokenized_continuation)
                     tokenized_continuations_batch.append(tokenized_continuation)
                     tokenized_contexts_batch.append(tokenized_context)
@@ -463,10 +489,14 @@ class SGLangModel(LightevalModel):
             flat_index = 0
             for doc in dataset:
                 # all the element generated from one doc (one element per choice)
-                outputs_doc: list[dict] = outputs[flat_index : flat_index + len(doc.choices)]
-                tokenized_continuations_doc: list[list[int]] = tokenized_continuations_batch[
+                outputs_doc: list[dict] = outputs[
                     flat_index : flat_index + len(doc.choices)
                 ]
+                tokenized_continuations_doc: list[list[int]] = (
+                    tokenized_continuations_batch[
+                        flat_index : flat_index + len(doc.choices)
+                    ]
+                )
                 tokenized_contexts_doc: list[list[int]] = tokenized_contexts_batch[
                     flat_index : flat_index + len(doc.choices)
                 ]
@@ -485,7 +515,10 @@ class SGLangModel(LightevalModel):
                     input_token_logprobs = meta_info["input_token_logprobs"][::-1]
                     input_top_logprobs = input_top_logprobs[: len(continuation)]
                     logprobs = input_token_logprobs[: len(continuation)]
-                    bool_score = all(top[0][1] == input[1] for top, input in zip(input_top_logprobs, logprobs))
+                    bool_score = all(
+                        top[0][1] == input[1]
+                        for top, input in zip(input_top_logprobs, logprobs)
+                    )
                     logprobs = [logprob[0] for logprob in logprobs]
                     logprobs_doc.append(logprobs)
                     argmax_doc.append(bool_score)

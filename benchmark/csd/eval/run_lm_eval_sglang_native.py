@@ -19,8 +19,12 @@ def parse_args():
         description="Run lm-eval with SGLang /generate and collect speculative/CSD metrics."
     )
     parser.add_argument("--base-url", default="http://localhost:30000")
-    parser.add_argument("--model", required=True, help="HF model/tokenizer name or path")
-    parser.add_argument("--tasks", required=True, help="Comma-separated lm-eval task names")
+    parser.add_argument(
+        "--model", required=True, help="HF model/tokenizer name or path"
+    )
+    parser.add_argument(
+        "--tasks", required=True, help="Comma-separated lm-eval task names"
+    )
     parser.add_argument("--num-fewshot", type=int, default=None)
     parser.add_argument("--limit", type=float, default=None)
     parser.add_argument("--batch-size", default="1")
@@ -67,7 +71,16 @@ def parse_args():
     parser.add_argument("--watchdog-timeout", type=int, default=None)
     parser.add_argument("--csd-table-path", default=None)
     parser.add_argument("--csd-freq-threshold", type=int, default=None)
+    parser.add_argument(
+        "--csd-key-selection-strategy",
+        choices=("frequency", "count_squared_over_total", "above_uniform_share"),
+        default="frequency",
+    )
+    parser.add_argument("--csd-score-threshold", type=float, default=0.0)
     parser.add_argument("--csd-prob-ratio", type=float, default=None)
+    parser.add_argument(
+        "--csd-force-accept-entropy-threshold", type=float, default=-1.0
+    )
     parser.add_argument("--csd-dynamic-update", action="store_true")
     parser.add_argument("--csd-force-accept-disabled", action="store_true")
     parser.add_argument("--speculative-algorithm", default=None)
@@ -103,7 +116,10 @@ def _pick_server_config(server_info):
         "speculative_csd_force_accept_disabled",
         "speculative_csd_table_path",
         "speculative_csd_freq_threshold",
+        "speculative_csd_key_selection_strategy",
+        "speculative_csd_score_threshold",
         "speculative_csd_prob_ratio",
+        "speculative_csd_force_accept_entropy_threshold",
         "speculative_csd_delta_capacity",
         "tp_size",
         "dp_size",
@@ -119,9 +135,11 @@ def _run_config(args):
     return {
         "run_tag": args.run_tag,
         "mode": args.mode,
-        "experiment_config": json.loads(args.experiment_config_json)
-        if args.experiment_config_json
-        else None,
+        "experiment_config": (
+            json.loads(args.experiment_config_json)
+            if args.experiment_config_json
+            else None
+        ),
         "server_log": args.server_log,
         "base_url": args.base_url,
         "model": args.model,
@@ -159,7 +177,10 @@ def _run_config(args):
         "csd": {
             "table_path": args.csd_table_path,
             "freq_threshold": args.csd_freq_threshold,
+            "key_selection_strategy": args.csd_key_selection_strategy,
+            "score_threshold": args.csd_score_threshold,
             "prob_ratio": args.csd_prob_ratio,
+            "force_accept_entropy_threshold": args.csd_force_accept_entropy_threshold,
             "dynamic_update": args.csd_dynamic_update,
             "force_accept_disabled": args.csd_force_accept_disabled,
         },
@@ -198,7 +219,11 @@ def _compact_result_rows(results, args):
     n_shot = results.get("n-shot", {})
     experiment_config = run_config.get("experiment_config") or {}
     parallel = args.parallel or experiment_config.get("current_parallel")
-    repeat_index = args.repeat_index if args.repeat_index is not None else experiment_config.get("repeat_index")
+    repeat_index = (
+        args.repeat_index
+        if args.repeat_index is not None
+        else experiment_config.get("repeat_index")
+    )
     sweep_id = args.sweep_id or experiment_config.get("sweep_id")
     rows = []
     for task_name in task_names:
@@ -216,7 +241,9 @@ def _compact_result_rows(results, args):
             "backend": "srt",
             "num_gpus": args.tensor_parallel_size,
             "latency": performance.get("elapsed_sec"),
-            "accuracy": round(score_value, 6) if isinstance(score_value, float) else score_value,
+            "accuracy": (
+                round(score_value, 6) if isinstance(score_value, float) else score_value
+            ),
             "invalid": None,
             "throughput": performance.get("output_token_throughput"),
             "accept_length": spec.get("avg_spec_accept_length"),
@@ -286,7 +313,9 @@ def _write_sample_log(results, args):
             for row in rows:
                 arguments = row.get("arguments") or {}
                 prompt = None
-                gen_args = arguments.get("gen_args_0") if isinstance(arguments, dict) else None
+                gen_args = (
+                    arguments.get("gen_args_0") if isinstance(arguments, dict) else None
+                )
                 if isinstance(gen_args, dict):
                     prompt = gen_args.get("arg_0")
                 record = {
@@ -356,18 +385,28 @@ def main():
     total_completion_tokens = (
         spec_summary.get("total_completion_tokens", 0) if spec_summary else 0
     )
-    total_prompt_tokens = spec_summary.get("total_prompt_tokens", 0) if spec_summary else 0
+    total_prompt_tokens = (
+        spec_summary.get("total_prompt_tokens", 0) if spec_summary else 0
+    )
     performance = {
         "elapsed_sec": round(elapsed, 3),
-        "request_throughput": round((spec_summary.get("total_requests", 0) if spec_summary else 0) / elapsed, 3)
-        if elapsed > 0
-        else 0,
-        "output_token_throughput": round(total_completion_tokens / elapsed, 3)
-        if elapsed > 0
-        else 0,
-        "total_token_throughput": round((total_prompt_tokens + total_completion_tokens) / elapsed, 3)
-        if elapsed > 0
-        else 0,
+        "request_throughput": (
+            round(
+                (spec_summary.get("total_requests", 0) if spec_summary else 0)
+                / elapsed,
+                3,
+            )
+            if elapsed > 0
+            else 0
+        ),
+        "output_token_throughput": (
+            round(total_completion_tokens / elapsed, 3) if elapsed > 0 else 0
+        ),
+        "total_token_throughput": (
+            round((total_prompt_tokens + total_completion_tokens) / elapsed, 3)
+            if elapsed > 0
+            else 0
+        ),
     }
 
     server_config = _pick_server_config(server_info)

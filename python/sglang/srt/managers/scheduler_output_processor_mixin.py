@@ -56,6 +56,9 @@ class SchedulerOutputProcessorMixin:
         csd_runtime = getattr(draft_worker, "csd_runtime", None)
         if csd_runtime is None or not csd_runtime.enabled:
             return None
+        metrics_snapshot = getattr(csd_runtime, "metrics_snapshot", None)
+        if metrics_snapshot is not None:
+            return metrics_snapshot()
         return csd_runtime.metrics.snapshot()
 
     def _get_cached_tokens_details(self: Scheduler, req: Req) -> Optional[dict]:

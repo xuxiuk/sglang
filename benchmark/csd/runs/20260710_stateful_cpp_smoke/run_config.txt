@@ -1,0 +1,26 @@
+OUT_ROOT=/root/sglang/benchmark/csd/runs/20260710_stateful_cpp_smoke
+RESULT_FILE=/root/sglang/benchmark/csd/runs/20260710_stateful_cpp_smoke/results/domain_ood_csd_515.jsonl
+OOD_DATA_FILES=/root/sglang/benchmark/csd/runs/code_ood_data/apps_2000_code_ood_alpaca.json
+NUM_EXAMPLES=4
+MODEL_PATH=/root/model/Qwen3.5-35B-A3B
+CUDA_DEVICES=0,1,2,3
+TP_SIZE=4
+PORT=30171
+METHOD_SET=eagle dynamic_ignore_ratio dynamic_entropy_p20_ignore_ratio
+PARALLEL=4
+MAX_RUNNING_REQUESTS=4
+ENABLE_SERVER_METRICS=false
+DECODE_LOG_INTERVAL=40
+METRICS_SCRAPE_INTERVAL=30
+MAX_NEW_TOKENS=256
+TEMPERATURE=1.0
+TOP_P=0.95
+TOP_K=20
+PRESENCE_PENALTY=1.5
+ENABLE_THINKING=true
+TREE=515:5:1:5
+CSD_REBUILD_THRESHOLD=64
+CSD_HUGE_REBUILD_THRESHOLD=1000000000
+PLAIN_CSD_TABLE_PATH=/root/sglang/benchmark/csd/runs/redpajama/csd_table_redpajama_logits_ungated_6domains_n1000_Qwen3.5-35B-A3B_mtp_EAGLE_steps5_topk1_draft5_temp1.0_ratio0.01_maxnew1024.json
+DATASET_COUNTS:
+apps_2000_code_ood_alpaca.json=2000

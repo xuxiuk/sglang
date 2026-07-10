@@ -21,7 +21,6 @@ from lighteval.models.model_input import GenerationParameters
 from lighteval.models.sglang.sglang_model import SGLangModelConfig
 from lighteval.pipeline import ParallelismManager, Pipeline, PipelineParameters
 
-
 PREFERRED_SCORE_KEYS = (
     "exact_match",
     "expr_gold_metric",
@@ -42,11 +41,19 @@ def parse_args():
     )
     parser.add_argument("--model", required=True, help="HF model path/name")
     parser.add_argument("--tokenizer", default=None, help="HF tokenizer path/name")
-    parser.add_argument("--tasks", required=True, help="Comma-separated LightEval task specs, e.g. gsm8k|0")
+    parser.add_argument(
+        "--tasks",
+        required=True,
+        help="Comma-separated LightEval task specs, e.g. gsm8k|0",
+    )
     parser.add_argument("--limit", type=int, default=None, help="Max samples per task")
-    parser.add_argument("--output-dir", default=None, help="LightEval tracker output dir")
+    parser.add_argument(
+        "--output-dir", default=None, help="LightEval tracker output dir"
+    )
     parser.add_argument("--output-path", default="lighteval_sglang_native_results.json")
-    parser.add_argument("--metrics-output-path", default="lighteval_sglang_native_metrics.json")
+    parser.add_argument(
+        "--metrics-output-path", default="lighteval_sglang_native_metrics.json"
+    )
     parser.add_argument("--result-jsonl-path", default=None)
     parser.add_argument("--run-tag", default=None)
     parser.add_argument("--experiment-config-json", default=None)
@@ -68,13 +75,19 @@ def parse_args():
     parser.add_argument("--load-format", default="auto")
     parser.add_argument("--tokenizer-mode", default="auto")
     parser.add_argument("--add-special-tokens", action="store_true", default=True)
-    parser.add_argument("--no-add-special-tokens", dest="add_special_tokens", action="store_false")
+    parser.add_argument(
+        "--no-add-special-tokens", dest="add_special_tokens", action="store_false"
+    )
     parser.add_argument("--pairwise-tokenization", action="store_true")
     parser.add_argument("--sampling-backend", default=None)
     parser.add_argument("--attention-backend", default=None)
     parser.add_argument("--chunked-prefill-size", type=int, default=4096)
-    parser.add_argument("--override-chat-template", choices=("true", "false", "auto"), default="auto")
-    parser.add_argument("--enable-thinking", choices=("true", "false", "auto"), default="auto")
+    parser.add_argument(
+        "--override-chat-template", choices=("true", "false", "auto"), default="auto"
+    )
+    parser.add_argument(
+        "--enable-thinking", choices=("true", "false", "auto"), default="auto"
+    )
     parser.add_argument("--system-prompt", default=None)
     parser.add_argument("--gen-kwargs", default=None)
     parser.add_argument("--save-details", action="store_true")
@@ -83,7 +96,9 @@ def parse_args():
     parser.add_argument("--custom-tasks", default=None)
     parser.add_argument("--num-fewshot-seeds", type=int, default=1)
     parser.add_argument("--remove-reasoning-tags", action="store_true", default=True)
-    parser.add_argument("--keep-reasoning-tags", dest="remove_reasoning_tags", action="store_false")
+    parser.add_argument(
+        "--keep-reasoning-tags", dest="remove_reasoning_tags", action="store_false"
+    )
     parser.add_argument("--reasoning-tags", default="[('<think>', '</think>')]")
     parser.add_argument("--bootstrap-iters", type=int, default=1000)
     parser.add_argument("--speculative-algorithm", default=None)
@@ -93,7 +108,16 @@ def parse_args():
     parser.add_argument("--csd-table-path", default=None)
     parser.add_argument("--csd-save-table-path", default=None)
     parser.add_argument("--csd-freq-threshold", type=int, default=None)
+    parser.add_argument(
+        "--csd-key-selection-strategy",
+        choices=("frequency", "count_squared_over_total", "above_uniform_share"),
+        default="frequency",
+    )
+    parser.add_argument("--csd-score-threshold", type=float, default=0.0)
     parser.add_argument("--csd-prob-ratio", type=float, default=None)
+    parser.add_argument(
+        "--csd-force-accept-entropy-threshold", type=float, default=-1.0
+    )
     parser.add_argument(
         "--csd-rebuild-top-keep",
         "--csd-rebuild-top-freq-ratio",
@@ -149,7 +173,11 @@ def _run_config(args):
     return {
         "run_tag": args.run_tag,
         "mode": args.mode,
-        "experiment_config": json.loads(args.experiment_config_json) if args.experiment_config_json else None,
+        "experiment_config": (
+            json.loads(args.experiment_config_json)
+            if args.experiment_config_json
+            else None
+        ),
         "server_log": args.server_log,
         "model": args.model,
         "tokenizer": args.tokenizer,
@@ -185,7 +213,10 @@ def _run_config(args):
             "table_path": args.csd_table_path,
             "save_table_path": args.csd_save_table_path,
             "freq_threshold": args.csd_freq_threshold,
+            "key_selection_strategy": args.csd_key_selection_strategy,
+            "score_threshold": args.csd_score_threshold,
             "prob_ratio": args.csd_prob_ratio,
+            "force_accept_entropy_threshold": args.csd_force_accept_entropy_threshold,
             "rebuild_top_keep": args.csd_rebuild_top_keep,
             "dynamic_update": args.csd_dynamic_update,
             "dynamic_update_ignore_prob_ratio": args.csd_dynamic_update_ignore_prob_ratio,
@@ -207,7 +238,10 @@ def _server_config(args):
         "speculative_csd_table_path": args.csd_table_path,
         "speculative_csd_save_table_path": args.csd_save_table_path,
         "speculative_csd_freq_threshold": args.csd_freq_threshold,
+        "speculative_csd_key_selection_strategy": args.csd_key_selection_strategy,
+        "speculative_csd_score_threshold": args.csd_score_threshold,
         "speculative_csd_prob_ratio": args.csd_prob_ratio,
+        "speculative_csd_force_accept_entropy_threshold": args.csd_force_accept_entropy_threshold,
         "speculative_csd_rebuild_top_keep": args.csd_rebuild_top_keep,
         "port": args.port,
         "tp_size": args.tensor_parallel_size,
@@ -283,9 +317,15 @@ def _compact_result_rows(results, args):
     performance = results["sglang"]["performance"]
     spec = results["sglang"].get("speculative_metrics") or {}
     total_requests = spec.get("total_requests") or 0
-    avg_prompt_tokens = round(spec.get("total_prompt_tokens", 0) / total_requests, 3) if total_requests else None
+    avg_prompt_tokens = (
+        round(spec.get("total_prompt_tokens", 0) / total_requests, 3)
+        if total_requests
+        else None
+    )
     avg_completion_tokens = (
-        round(spec.get("total_completion_tokens", 0) / total_requests, 3) if total_requests else None
+        round(spec.get("total_completion_tokens", 0) / total_requests, 3)
+        if total_requests
+        else None
     )
     server_config = results["sglang"].get("server_config") or {}
     csd_enabled = server_config.get("speculative_csd_enabled")
@@ -306,7 +346,9 @@ def _compact_result_rows(results, args):
             "enable_thinking": args.enable_thinking,
             "temperature": generation_parameters.get("temperature"),
             "latency": performance.get("elapsed_sec"),
-            "accuracy": round(score_value, 6) if isinstance(score_value, float) else score_value,
+            "accuracy": (
+                round(score_value, 6) if isinstance(score_value, float) else score_value
+            ),
             "invalid": None,
             "throughput": performance.get("output_token_throughput"),
             "accept_length": spec.get("avg_spec_accept_length"),
@@ -350,7 +392,11 @@ def _compact_result_rows(results, args):
                 "csd_enabled": csd_enabled,
                 "csd": csd_config,
                 "performance": performance,
-                "speculative_metrics": {key: value for key, value in spec.items() if key != "per_request_metrics"},
+                "speculative_metrics": {
+                    key: value
+                    for key, value in spec.items()
+                    if key != "per_request_metrics"
+                },
                 "server_config": server_config,
             },
         }
@@ -405,15 +451,24 @@ def _build_model_config(args):
         speculative_num_draft_tokens=args.speculative_num_draft_tokens,
         speculative_csd_enabled=args.csd_enabled,
         speculative_csd_table_path=args.csd_table_path if args.csd_enabled else None,
-        speculative_csd_freq_threshold=args.csd_freq_threshold if args.csd_enabled else None,
+        speculative_csd_freq_threshold=(
+            args.csd_freq_threshold if args.csd_enabled else None
+        ),
+        speculative_csd_key_selection_strategy=args.csd_key_selection_strategy,
+        speculative_csd_score_threshold=args.csd_score_threshold,
         speculative_csd_prob_ratio=args.csd_prob_ratio if args.csd_enabled else None,
-        speculative_csd_rebuild_top_keep=args.csd_rebuild_top_keep if args.csd_enabled else None,
+        speculative_csd_force_accept_entropy_threshold=args.csd_force_accept_entropy_threshold,
+        speculative_csd_rebuild_top_keep=(
+            args.csd_rebuild_top_keep if args.csd_enabled else None
+        ),
         port=args.port,
         speculative_csd_dynamic_update=args.csd_dynamic_update,
         speculative_csd_dynamic_update_ignore_prob_ratio=args.csd_dynamic_update_ignore_prob_ratio,
         speculative_csd_force_accept_disabled=args.csd_force_accept_disabled,
         speculative_csd_save_table_path=args.csd_save_table_path,
-        speculative_csd_save_table_metadata=_run_config(args) if args.csd_save_table_path else None,
+        speculative_csd_save_table_metadata=(
+            _run_config(args) if args.csd_save_table_path else None
+        ),
     )
 
 
@@ -424,7 +479,9 @@ def main():
     output_path = Path(args.output_path)
     metrics_path = Path(args.metrics_output_path)
     if args.csd_save_table_path and Path(args.csd_save_table_path).exists():
-        raise FileExistsError(f"Refusing to overwrite existing CSD table: {args.csd_save_table_path}")
+        raise FileExistsError(
+            f"Refusing to overwrite existing CSD table: {args.csd_save_table_path}"
+        )
     if args.csd_save_table_path:
         Path(args.csd_save_table_path).parent.mkdir(parents=True, exist_ok=True)
     output_dir = args.output_dir or str(output_path.parent / "lighteval_tracker")
@@ -465,15 +522,23 @@ def main():
         print(f"LightEval SGLang metrics saved to {metrics_path}")
 
     total_requests = spec_summary.get("total_requests", 0) if spec_summary else 0
-    total_prompt_tokens = spec_summary.get("total_prompt_tokens", 0) if spec_summary else 0
-    total_completion_tokens = spec_summary.get("total_completion_tokens", 0) if spec_summary else 0
+    total_prompt_tokens = (
+        spec_summary.get("total_prompt_tokens", 0) if spec_summary else 0
+    )
+    total_completion_tokens = (
+        spec_summary.get("total_completion_tokens", 0) if spec_summary else 0
+    )
     performance = {
         "elapsed_sec": round(elapsed, 3),
         "request_throughput": round(total_requests / elapsed, 3) if elapsed > 0 else 0,
-        "output_token_throughput": round(total_completion_tokens / elapsed, 3) if elapsed > 0 else 0,
-        "total_token_throughput": round((total_prompt_tokens + total_completion_tokens) / elapsed, 3)
-        if elapsed > 0
-        else 0,
+        "output_token_throughput": (
+            round(total_completion_tokens / elapsed, 3) if elapsed > 0 else 0
+        ),
+        "total_token_throughput": (
+            round((total_prompt_tokens + total_completion_tokens) / elapsed, 3)
+            if elapsed > 0
+            else 0
+        ),
     }
 
     run_config = _run_config(args)
@@ -482,7 +547,10 @@ def main():
     results["sglang"].update(
         {
             "run_config": run_config,
-            "model_info": {"model_path": args.model, "tokenizer_path": args.tokenizer or args.model},
+            "model_info": {
+                "model_path": args.model,
+                "tokenizer_path": args.tokenizer or args.model,
+            },
             "server_config": server_config,
             "performance": performance,
             "speculative_metrics": spec_summary,
@@ -499,7 +567,9 @@ def main():
         result_jsonl_path = Path(args.result_jsonl_path)
         with result_jsonl_path.open("a", encoding="utf-8") as f:
             for row in _compact_result_rows(results, args):
-                f.write(json.dumps(row, cls=EnhancedJSONEncoder, ensure_ascii=False) + "\n")
+                f.write(
+                    json.dumps(row, cls=EnhancedJSONEncoder, ensure_ascii=False) + "\n"
+                )
         print(f"LightEval compact result appended to {result_jsonl_path}")
 
 

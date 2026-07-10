@@ -1,0 +1,2 @@
+{"window_s": 30, "window_index": 0, "start_s": 0.0, "end_s": 1.254305, "completed_requests": 4, "completed_tokens": 1024, "completed_throughput": 816.388358}
+{"window_s": 60, "window_index": 0, "start_s": 0.0, "end_s": 1.254305, "completed_requests": 4, "completed_tokens": 1024, "completed_throughput": 816.388358}
