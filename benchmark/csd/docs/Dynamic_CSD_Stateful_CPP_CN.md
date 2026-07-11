@@ -107,7 +107,9 @@ benchmark/csd/runs/csd_rebuild_cpu_profile/csd_rebuild_gil.chrometrace.json
 
 这些是嵌套 inclusive 时间，不能相加。主线程 0.5 ms heartbeat 的 p99 gap 为 6.7 ms，最大 gap 为 8.0 ms，直接显示了 GIL 抢占。
 
-## 4. 第一阶段：Python 增量 membership
+## 4. 历史中间阶段一：Python 增量 membership（当前 fast path 已不使用）
+
+> 本节记录优化演进过程，不描述当前最终运行路径。当前 frequency/no-top-keep fast path 以第 6 节 Stateful C++ builder 为准。
 
 最初每次 merge 都让 filtered cache 失效，随后重新扫描约 105 万历史 entry。frequency threshold 只会随计数增加而从 false 变为 true，因此无需重复全表扫描。
 
@@ -137,7 +139,9 @@ if old_freq < threshold <= new_freq:
 
 该阶段消除了全表扫描，但 Python hash build 仍是主要 GIL 热点。
 
-## 5. 第二阶段：Stateless C++ CPU hash build
+## 5. 历史中间阶段二：Stateless C++ CPU hash build（当前 fast path 已不使用）
+
+> 本节记录只把 hash build 移入 C++ 的中间版本。下文所述 Python `Counter` merge 是这个 stateless 版本的限制，已由第 6 节 Stateful C++ builder 消除。
 
 新增 `sgl-kernel/csrc/speculative/csd_rebuild.cpp`，注册 Torch CPU operator：
 
@@ -177,6 +181,8 @@ C++ 输出与 Python reference 逐槽一致，纯 hash build 加速约 110 倍�
 因此还没有完全消除在线 GIL gap。
 
 ## 6. 最终实现：Stateful C++ CPU builder
+
+**当前实验运行的是本节的最终实现。它不只是重建 hash table；历史频次状态、delta merge、threshold membership 和 hash build 均由 C++ 完成。第 4、5 节仅用于说明演进过程。**
 
 ### 6.1 C++ 状态
 
@@ -228,7 +234,22 @@ if (count == freq_threshold_) {
 }
 ```
 
+输入是尚未在 Python 聚合的 CPU `int64` delta-pair Tensor。C++ 对每个 pair 执行一次 `counts_[key]++`，其频次合并语义等价于旧路径的 `Counter.update(delta_pairs)`，但不会创建 Python `Counter`，也不会执行 Python dict merge。
+
 因为 count 单调增加，只有等于 threshold 的瞬间需要修改 membership。随后直接从 `active_keys_` 构建 open-addressing table。
+
+当前 frequency/no-top-keep fast path 的职责边界如下：
+
+| 阶段 | 当前执行位置 |
+| --- | --- |
+| GPU delta pair append | CUDA |
+| 读取 delta 长度、触发异步任务 | Python scheduler |
+| delta pairs D2H | PyTorch/CUDA copy |
+| delta frequency merge | **Stateful C++ `counts_`** |
+| threshold membership 更新 | **Stateful C++ `active_keys_`** |
+| open-addressing table build | **Stateful C++** |
+| CPU table H2D 与引用替换 | Python/PyTorch |
+| speculative lookup | CUDA |
 
 ### 6.3 新数据路径
 
@@ -304,6 +325,8 @@ rebuild 是低频控制面，包含：
 - `torch.classes.sgl_kernel.CSDTableBuilder` 已注册。
 
 否则继续使用 Python rebuild。这样 pair-score、above-uniform-share、top-keep 等需要全局排序/统计的策略不会被错误地套用 frequency-only 增量逻辑。
+
+因此，在代码中仍能看到 `flush_delta()`、`Counter` 和 `merge_counts()`，并不表示当前 Stateful fast path 会执行它们。它们服务于 fallback、显式 delta 保存以及不满足上述条件的策略。`maybe_start_async_rebuild()` 在 `native_table_builder` 存在时调用 `drain_to_cpu_tensor()`，随后直接提交 `build_csd_rebuild_payload_native()`；只有 native builder 不存在时才调用 `flush_delta()` 进入 Python Counter 路径。
 
 当前测试环境通过：
 
