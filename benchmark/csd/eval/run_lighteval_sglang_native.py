@@ -125,6 +125,7 @@ def parse_args():
         type=float,
         default=None,
     )
+    parser.add_argument("--csd-rebuild-threshold", type=int, default=4096)
     parser.add_argument("--csd-dynamic-update", action="store_true")
     parser.add_argument("--csd-dynamic-update-ignore-prob-ratio", action="store_true")
     parser.add_argument("--csd-force-accept-disabled", action="store_true")
@@ -218,6 +219,7 @@ def _run_config(args):
             "prob_ratio": args.csd_prob_ratio,
             "force_accept_entropy_threshold": args.csd_force_accept_entropy_threshold,
             "rebuild_top_keep": args.csd_rebuild_top_keep,
+            "rebuild_threshold": args.csd_rebuild_threshold,
             "dynamic_update": args.csd_dynamic_update,
             "dynamic_update_ignore_prob_ratio": args.csd_dynamic_update_ignore_prob_ratio,
             "force_accept_disabled": args.csd_force_accept_disabled,
@@ -243,6 +245,7 @@ def _server_config(args):
         "speculative_csd_prob_ratio": args.csd_prob_ratio,
         "speculative_csd_force_accept_entropy_threshold": args.csd_force_accept_entropy_threshold,
         "speculative_csd_rebuild_top_keep": args.csd_rebuild_top_keep,
+        "speculative_csd_rebuild_threshold": args.csd_rebuild_threshold,
         "port": args.port,
         "tp_size": args.tensor_parallel_size,
         "dp_size": args.data_parallel_size,
@@ -419,6 +422,14 @@ def _chat_template_kwargs(value):
 def _build_model_config(args):
     gen_params = _parse_gen_kwargs(args.gen_kwargs)
     gen_params["max_new_tokens"] = args.max_gen_toks
+    # LightEval changed this field name across releases.  The newer copy used
+    # by v0.5.11 accepts ``sampling_seed`` directly, while the v0.5.10 copy
+    # stores it as ``seed`` and converts it to SGLang's ``sampling_seed`` in
+    # ``to_sglang_dict``.  Normalize against the actually imported model so
+    # the same experiment command remains reproducible on both worktrees.
+    generation_fields = GenerationParameters.model_fields
+    if "sampling_seed" in gen_params and "sampling_seed" not in generation_fields:
+        gen_params["seed"] = gen_params.pop("sampling_seed")
     generation_parameters = GenerationParameters(**gen_params)
     return SGLangModelConfig(
         model_name=args.model,
@@ -461,6 +472,7 @@ def _build_model_config(args):
         speculative_csd_rebuild_top_keep=(
             args.csd_rebuild_top_keep if args.csd_enabled else None
         ),
+        speculative_csd_rebuild_threshold=args.csd_rebuild_threshold,
         port=args.port,
         speculative_csd_dynamic_update=args.csd_dynamic_update,
         speculative_csd_dynamic_update_ignore_prob_ratio=args.csd_dynamic_update_ignore_prob_ratio,

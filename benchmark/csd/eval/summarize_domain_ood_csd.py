@@ -13,6 +13,7 @@ METHOD_ORDER = [
     "auto",
     "eagle",
     "plain",
+    "dynamic",
     "dynamic_ignore_ratio",
     "dynamic_ignore_ratio_huge",
     "dynamic_entropy_p20_ignore_ratio",
@@ -31,6 +32,7 @@ def infer_method(row: dict[str, Any]) -> str:
         "dynamic_entropy_p20_ignore_ratio",
         "dynamic_ignore_ratio_huge",
         "dynamic_ignore_ratio",
+        "dynamic",
         "plain",
         "eagle",
         "auto",
@@ -41,6 +43,9 @@ def infer_method(row: dict[str, Any]) -> str:
 
 
 def infer_dataset(row: dict[str, Any], fallback: str) -> str:
+    task = row.get("task")
+    if task and task != "alpaca_eval":
+        return str(task)
     other = row.get("other", {})
     data_file = other.get("data_file")
     if data_file:
@@ -49,9 +54,6 @@ def infer_dataset(row: dict[str, Any], fallback: str) -> str:
             if name.endswith(suffix):
                 return name[: -len(suffix)]
         return name
-    task = row.get("task")
-    if task and task != "alpaca_eval":
-        return str(task)
     answer_file = other.get("answer_file")
     if answer_file:
         name = Path(answer_file).name

@@ -1,7 +1,0 @@
-line,base_task,mode,variant,spec_shape,csd_prob_ratio,csd_dynamic_update,accuracy,throughput,accept_length,aggregate_accept_length,spec_success_rate,aggregate_spec_accept_rate,spec_output_token_saved_ratio,csd_force_per_hit,csd_lookup_hit_ct,csd_forced_accept_ct,missing_spec_metrics
-27,lcb:codegeneration_v6,csd,csd-dyn,steps5_topk1_draft5,0.3,True,0.645714,0.0,,,,,,,,,True
-23,lcb:codegeneration_v6,csd,csd-static,steps5_topk1_draft5,0.3,False,0.714286,0.0,,,,,,,,,True
-19,lcb:codegeneration_v6,vanilla,vanilla,steps5_topk1_draft5,0.01,False,0.72,0.0,,,,,,,,,True
-15,lcb:codegeneration_v6,csd,csd-dyn,steps5_topk3_draft15,0.3,True,0.645714,0.0,,,,,,,,,True
-11,lcb:codegeneration_v6,csd,csd-static,steps5_topk3_draft15,0.3,False,0.72,0.0,,,,,,,,,True
-7,lcb:codegeneration_v6,vanilla,vanilla,steps5_topk3_draft15,0.01,False,0.742857,0.0,,,,,,,,,True

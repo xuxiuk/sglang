@@ -1,8 +1,0 @@
-timestamp	status	mode	tasks	batch_size	repeat	shape	steps	topk	draft	dynamic_update	run_id
-2026-05-10T19:10:56	137	vanilla	gsm8k aime25	8	1	tree	5	3	15	0	tasksgsm8k-aime25_bs48_rep3_default_steps5_topk3_draft15_freq6_ratio0.3
-2026-05-10T22:45:30	137	csd	gsm8k aime25	8	1	tree	5	3	15	0	tasksgsm8k-aime25_bs48_rep3_default_steps5_topk3_draft15_freq6_ratio0.3
-2026-05-11T02:22:06	137	csd	gsm8k aime25	8	1	tree	5	3	15	1	tasksgsm8k-aime25_bs48_rep3_default_steps5_topk3_draft15_freq6_ratio0.3
-2026-05-11T05:55:26	137	vanilla	gsm8k aime25	8	1	serial	5	1	5	0	tasksgsm8k-aime25_bs48_rep3_default_steps5_topk3_draft15_freq6_ratio0.3
-2026-05-11T09:25:36	137	csd	gsm8k aime25	8	1	serial	5	1	5	0	tasksgsm8k-aime25_bs48_rep3_default_steps5_topk3_draft15_freq6_ratio0.3
-2026-05-11T13:49:17	137	vanilla	gsm8k aime25	8	2	tree	5	3	15	0	tasksgsm8k-aime25_bs48_rep3_default_steps5_topk3_draft15_freq6_ratio0.3
-2026-05-11T17:28:50	137	csd	gsm8k aime25	8	2	tree	5	3	15	0	tasksgsm8k-aime25_bs48_rep3_default_steps5_topk3_draft15_freq6_ratio0.3

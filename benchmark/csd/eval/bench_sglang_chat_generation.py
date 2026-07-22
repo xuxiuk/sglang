@@ -326,6 +326,11 @@ def main() -> None:
         choices=["alpaca_eval", "arena_hard_v0.1", "arena_hard_v2.0", "ifeval"],
         required=True,
     )
+    parser.add_argument(
+        "--task-name",
+        default=None,
+        help="Logical task name written to results (defaults to --dataset).",
+    )
     parser.add_argument("--data-file", default=None)
     parser.add_argument("--answer-file", required=True)
     parser.add_argument("--num-examples", type=int, default=None)
@@ -343,8 +348,9 @@ def main() -> None:
     parser.add_argument("--max-new-tokens", type=int, default=32768)
     args = add_common_sglang_args_and_parse(parser)
 
-    rows = load_dataset_rows(args.dataset, args.data_file)
-    rows = rows[args.offset :]
+    all_rows = load_dataset_rows(args.dataset, args.data_file)
+    source_num_examples = len(all_rows)
+    rows = all_rows[args.offset :]
     if args.num_examples is not None:
         rows = rows[: args.num_examples]
 
@@ -485,8 +491,10 @@ def main() -> None:
         ],
     )
 
+    task_name = args.task_name or args.dataset
     result = {
-        "task": args.dataset,
+        "task": task_name,
+        "dataset_adapter": args.dataset,
         "model_id": model_id,
         "backend": args.backend,
         "num_gpus": None,
@@ -577,6 +585,10 @@ def main() -> None:
         "other": {
             "model_id": model_id,
             "data_file": args.data_file,
+            "dataset_adapter": args.dataset,
+            "source_num_examples": source_num_examples,
+            "selection_offset": args.offset,
+            "selection_limit": args.num_examples,
             "parallel": args.parallel,
             "answer_file": str(answer_path),
             "request_metrics_file": str(request_metrics_path),

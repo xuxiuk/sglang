@@ -177,6 +177,9 @@ benchmark/mmlu/data.tar
 benchmark/llava_bench/images
 benchmark/llava_bench/mme_pack
 benchmark/csd/runs/
+# Large, local inputs used by the canonical CSD benchmark.
+benchmark/csd/assets/calibration/*.json
+benchmark/csd/assets/data/*.json
 benchmark/gsm8k/csd_no_tree_runs/
 benchmark/gsm8k/csd_runs/
 benchmark/lighteval_csd_runs/
@@ -281,4 +284,4 @@ sgl-kernel/csrc/**/*_musa/
 *.npz
 
 #trace
-*.trace.json.gz 
+*.trace.json.gz
