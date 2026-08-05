@@ -52,6 +52,7 @@ from sglang.srt.speculative.adaptive_runtime_state import (
     SpecRuntimeState,
 )
 from sglang.srt.speculative.base_spec_worker import BaseSpecWorker, EagleDraftWorkerBase
+from sglang.srt.speculative.csd_runtime import CSDRuntime
 from sglang.srt.speculative.draft_utils import DraftBackendFactory
 from sglang.srt.speculative.eagle_draft_cuda_graph_runner import (
     EAGLEDraftCudaGraphRunner,
@@ -969,6 +970,7 @@ class EAGLEWorkerV2(BaseSpecWorker):
         self.speculative_num_steps = server_args.speculative_num_steps
         self.speculative_num_draft_tokens = server_args.speculative_num_draft_tokens
         self.tp_rank = tp_rank
+        self.dp_rank = dp_rank
         self.gpu_id = gpu_id
         self.device = server_args.device
         self._target_worker = target_worker
@@ -976,6 +978,7 @@ class EAGLEWorkerV2(BaseSpecWorker):
         self.speculative_algorithm = SpeculativeAlgorithm.from_string(
             server_args.speculative_algorithm
         )
+        self.csd_runtime = CSDRuntime.from_server_args(server_args, self.device)
 
         # Override the context length of the draft model to be the same as the target model.
         server_args.context_length = target_worker.model_runner.model_config.context_len
@@ -1007,6 +1010,18 @@ class EAGLEWorkerV2(BaseSpecWorker):
         self.extend_lens = torch.empty((), dtype=torch.int64, device=self.device)
 
         self.plan_stream, self.plan_stream_ctx = _get_plan_stream(self.device)
+
+        if self.csd_runtime.enabled:
+            logger.info(
+                "MTP/EAGLE CSD enabled: table_entries=%d dynamic=%s "
+                "freq_threshold=%d prob_ratio=%g entropy_min=%g entropy_max=%g.",
+                self.csd_runtime.table.num_entries,
+                self.csd_runtime.dynamic_update,
+                self.csd_runtime.freq_threshold,
+                self.csd_runtime.prob_ratio,
+                self.csd_runtime.entropy_min_threshold,
+                self.csd_runtime.entropy_threshold,
+            )
 
     @property
     def war_fastpath_runner(self):
@@ -1083,7 +1098,32 @@ class EAGLEWorkerV2(BaseSpecWorker):
         # allocator and kv cache pool are shared with target worker, which are cleared in scheduler
         pass
 
+    def save_csd_table(self, path: str, metadata=None) -> bool:
+        if not self.csd_runtime.enabled:
+            return False
+        if metadata:
+            self.csd_runtime.table_store.metadata.update(metadata)
+        self.csd_runtime.table_store.metadata.update(
+            {
+                "algorithm": self.speculative_algorithm.name,
+                "tp_rank": int(self.tp_rank),
+                "dp_rank": -1 if self.dp_rank is None else int(self.dp_rank),
+                "speculative_num_steps": int(self.speculative_num_steps),
+                "speculative_num_draft_tokens": int(
+                    self.speculative_num_draft_tokens
+                ),
+            }
+        )
+        self.csd_runtime.save_table(path)
+        return True
+
     def forward_batch_generation(self, batch: ScheduleBatch, on_publish=None):
+        # Every rank drives the same rebuild state machine before branching on
+        # local forward mode. This is required by DP-attention aggregation and
+        # is a no-op when CSD or dynamic updates are disabled.
+        self.csd_runtime.maybe_apply_async_rebuild(device=self.device)
+        self.csd_runtime.maybe_start_async_rebuild()
+
         if batch.forward_mode.is_extend() or batch.is_extend_in_batch:
             # Target prefill
             target_capture_mode = (
@@ -1547,7 +1587,13 @@ class EAGLEWorkerV2(BaseSpecWorker):
             predict,
             accept_lens,
             accept_index,
-        ) = eagle_sample(verify_input, batch, logits_output, vocab_mask)
+        ) = eagle_sample(
+            verify_input,
+            batch,
+            logits_output,
+            vocab_mask,
+            csd_runtime=self.csd_runtime,
+        )
         new_seq_lens = batch.seq_lens + accept_lens
 
         # Update mamba state for hybrid GDN models after verification
