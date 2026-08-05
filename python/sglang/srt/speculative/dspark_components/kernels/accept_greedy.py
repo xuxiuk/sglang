@@ -8,13 +8,20 @@ import triton.language as tl
 
 from sglang.srt.environ import envs
 from sglang.srt.speculative.dflash_utils import (
+    _get_or_create_chain_verify_buffers,
     compute_dflash_correct_drafts_and_bonus,
 )
+from sglang.srt.speculative.dspark_components.dspark_csd import csd_kernel_kwargs
 from sglang.srt.speculative.dspark_components.kernels.cap_correct_len import (
     CapCorrectLen,
 )
 
 _KERNEL_IMPL = envs.SGLANG_DSPARK_KERNEL_ACCEPT_GREEDY.get()
+
+try:
+    from sgl_kernel.speculative import verify_tree_greedy
+except ImportError:
+    verify_tree_greedy = None
 
 
 class AcceptGreedy:
@@ -34,12 +41,14 @@ class AcceptGreedy:
         target_logits: torch.Tensor,
         verify_num_draft_tokens: int,
         cutoff_verify_lens: Optional[torch.Tensor] = None,
+        csd_runtime=None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         return accept_greedy(
             candidates=candidates,
             target_logits=target_logits,
             verify_num_draft_tokens=verify_num_draft_tokens,
             cutoff_verify_lens=cutoff_verify_lens,
+            csd_runtime=csd_runtime,
         )
 
     @classmethod
@@ -50,12 +59,14 @@ class AcceptGreedy:
         target_logits: torch.Tensor,
         verify_num_draft_tokens: int,
         cutoff_verify_lens: Optional[torch.Tensor] = None,
+        csd_runtime=None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         return accept_greedy_triton(
             candidates=candidates,
             target_logits=target_logits,
             verify_num_draft_tokens=verify_num_draft_tokens,
             cutoff_verify_lens=cutoff_verify_lens,
+            csd_runtime=csd_runtime,
         )
 
 
@@ -65,15 +76,49 @@ def accept_greedy(
     target_logits: torch.Tensor,
     verify_num_draft_tokens: int,
     cutoff_verify_lens: Optional[torch.Tensor] = None,
+    csd_runtime=None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     bs = candidates.shape[0]
     target_predict = torch.argmax(target_logits, dim=-1).view(
         bs, verify_num_draft_tokens
     )
-    correct_len, bonus = compute_dflash_correct_drafts_and_bonus(
-        candidates=candidates,
-        target_predict=target_predict,
-    )
+    if csd_runtime is not None and csd_runtime.enabled:
+        if verify_tree_greedy is None:
+            raise RuntimeError("DSpark CSD requires the sgl-kernel greedy verifier.")
+        (
+            retrieve_index,
+            retrieve_next_token,
+            retrieve_next_sibling,
+            predicts,
+            accept_index,
+            correct_len,
+        ) = _get_or_create_chain_verify_buffers(
+            bs=bs,
+            draft_token_num=verify_num_draft_tokens,
+            device=candidates.device,
+        )
+        verify_tree_greedy(
+            predicts=predicts,
+            accept_index=accept_index,
+            accept_token_num=correct_len,
+            candidates=candidates.to(torch.int64),
+            retrive_index=retrieve_index,
+            retrive_next_token=retrieve_next_token,
+            retrive_next_sibling=retrieve_next_sibling,
+            target_predict=target_predict,
+            target_logits=target_logits.reshape(bs, verify_num_draft_tokens, -1).to(
+                torch.float32
+            ),
+            **csd_kernel_kwargs(csd_runtime, include_entropy=False),
+        )
+        row_ids = torch.arange(bs, device=candidates.device)
+        accept_pos = accept_index[row_ids, correct_len.to(torch.long)].to(torch.long)
+        bonus = predicts[accept_pos].to(torch.int64)
+    else:
+        correct_len, bonus = compute_dflash_correct_drafts_and_bonus(
+            candidates=candidates,
+            target_predict=target_predict,
+        )
     cap_trim_lens = torch.zeros_like(correct_len)
     if cutoff_verify_lens is not None:
         correct_len, cap_trim_lens = CapCorrectLen.execute(
@@ -117,14 +162,22 @@ def accept_greedy_triton(
     target_logits: torch.Tensor,
     verify_num_draft_tokens: int,
     cutoff_verify_lens: Optional[torch.Tensor] = None,
+    csd_runtime=None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     bs = candidates.shape[0]
     target_predict = torch.argmax(target_logits, dim=-1).view(
         bs, verify_num_draft_tokens
     )
+    if csd_runtime is not None and csd_runtime.enabled:
+        return accept_greedy(
+            candidates=candidates,
+            target_logits=target_logits,
+            verify_num_draft_tokens=verify_num_draft_tokens,
+            cutoff_verify_lens=cutoff_verify_lens,
+            csd_runtime=csd_runtime,
+        )
     correct_len, bonus = compute_dflash_correct_drafts_and_bonus(
-        candidates=candidates,
-        target_predict=target_predict,
+        candidates=candidates, target_predict=target_predict
     )
     cap_trim_lens = torch.zeros_like(correct_len)
     if cutoff_verify_lens is not None:

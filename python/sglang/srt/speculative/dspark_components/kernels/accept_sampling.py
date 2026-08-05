@@ -16,7 +16,13 @@ from sglang.srt.speculative.dspark_components.kernels.cap_correct_len import (
     CapCorrectLen,
 )
 from sglang.srt.speculative.dspark_components.kernels.softmax_temp import SoftmaxTemp
+from sglang.srt.speculative.dspark_components.dspark_csd import csd_kernel_kwargs
 from sglang.srt.speculative.reject_sampling import chain_speculative_sampling_triton
+
+try:
+    from sgl_kernel.speculative import tree_speculative_sampling_target_only
+except ImportError:
+    tree_speculative_sampling_target_only = None
 
 _KERNEL_IMPL = envs.SGLANG_DSPARK_KERNEL_ACCEPT_SAMPLING.get()
 
@@ -42,6 +48,7 @@ class AcceptSampling:
         gamma: int,
         verify_num_draft_tokens: int,
         cutoff_verify_lens: Optional[torch.Tensor] = None,
+        csd_runtime=None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         return accept_sampling(
             candidates=candidates,
@@ -52,6 +59,7 @@ class AcceptSampling:
             gamma=gamma,
             verify_num_draft_tokens=verify_num_draft_tokens,
             cutoff_verify_lens=cutoff_verify_lens,
+            csd_runtime=csd_runtime,
         )
 
     @classmethod
@@ -66,6 +74,7 @@ class AcceptSampling:
         gamma: int,
         verify_num_draft_tokens: int,
         cutoff_verify_lens: Optional[torch.Tensor] = None,
+        csd_runtime=None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         return accept_sampling_triton(
             candidates=candidates,
@@ -76,6 +85,7 @@ class AcceptSampling:
             gamma=gamma,
             verify_num_draft_tokens=verify_num_draft_tokens,
             cutoff_verify_lens=cutoff_verify_lens,
+            csd_runtime=csd_runtime,
         )
 
 
@@ -89,6 +99,7 @@ def _accept_sampling_core(
     gamma: int,
     verify_num_draft_tokens: int,
     cutoff_verify_lens: Optional[torch.Tensor],
+    csd_runtime=None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     bs = candidates.shape[0]
     device = candidates.device
@@ -119,24 +130,61 @@ def _accept_sampling_core(
         draft_token_num=verify_num_draft_tokens,
         device=device,
     )
-    uniform_samples = torch.rand((bs, gamma), dtype=torch.float32, device=device)
-    uniform_samples_final = torch.rand((bs,), dtype=torch.float32, device=device)
-    chain_speculative_sampling_triton(
-        predicts=predicts,
-        accept_index=accept_index,
-        accept_token_num=accept_token_num,
-        candidates=candidates,
-        retrive_index=retrieve_index,
-        retrive_next_token=retrieve_next_token,
-        retrive_next_sibling=retrieve_next_sibling,
-        uniform_samples=uniform_samples,
-        uniform_samples_for_final_sampling=uniform_samples_final,
-        target_probs=target_probs,
-        draft_probs=draft_probs,
-        threshold_single=1.0,
-        threshold_acc=1.0,
-        deterministic=True,
+    # The shared CUDA tree verifier indexes coins by candidate slot (slot zero
+    # is the root), whereas the Triton chain verifier indexes the gamma draft
+    # steps densely. Allocate the larger slot-shaped tensor; Triton simply uses
+    # its first gamma values.
+    coin_cols = (
+        verify_num_draft_tokens
+        if csd_runtime is not None and csd_runtime.enabled
+        else gamma
     )
+    uniform_samples = torch.rand((bs, coin_cols), dtype=torch.float32, device=device)
+    uniform_samples_final = torch.rand((bs,), dtype=torch.float32, device=device)
+    if csd_runtime is not None and csd_runtime.enabled:
+        if tree_speculative_sampling_target_only is None:
+            raise RuntimeError(
+                "DSpark CSD requires the sgl-kernel speculative sampler."
+            )
+        target_logits_3d = target_logits.reshape(bs, verify_num_draft_tokens, -1).to(
+            torch.float32
+        )
+        tree_speculative_sampling_target_only(
+            predicts=predicts,
+            accept_index=accept_index,
+            accept_token_num=accept_token_num,
+            candidates=candidates.to(torch.int64),
+            retrive_index=retrieve_index,
+            retrive_next_token=retrieve_next_token,
+            retrive_next_sibling=retrieve_next_sibling,
+            uniform_samples=uniform_samples,
+            uniform_samples_for_final_sampling=uniform_samples_final,
+            target_probs=target_probs,
+            draft_probs=draft_probs,
+            target_logits=target_logits_3d,
+            use_rejection_sampling=True,
+            threshold_single=1.0,
+            threshold_acc=1.0,
+            deterministic=True,
+            **csd_kernel_kwargs(csd_runtime, include_entropy=True),
+        )
+    else:
+        chain_speculative_sampling_triton(
+            predicts=predicts,
+            accept_index=accept_index,
+            accept_token_num=accept_token_num,
+            candidates=candidates,
+            retrive_index=retrieve_index,
+            retrive_next_token=retrieve_next_token,
+            retrive_next_sibling=retrieve_next_sibling,
+            uniform_samples=uniform_samples,
+            uniform_samples_for_final_sampling=uniform_samples_final,
+            target_probs=target_probs,
+            draft_probs=draft_probs,
+            threshold_single=1.0,
+            threshold_acc=1.0,
+            deterministic=True,
+        )
     correct_len = accept_token_num
     if cutoff_verify_lens is not None:
         correct_len, cap_trim_lens = CapCorrectLen.execute(
@@ -157,6 +205,7 @@ def accept_sampling(
     gamma: int,
     verify_num_draft_tokens: int,
     cutoff_verify_lens: Optional[torch.Tensor] = None,
+    csd_runtime=None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     bs = candidates.shape[0]
     device = candidates.device
@@ -169,6 +218,7 @@ def accept_sampling(
         gamma=gamma,
         verify_num_draft_tokens=verify_num_draft_tokens,
         cutoff_verify_lens=cutoff_verify_lens,
+        csd_runtime=csd_runtime,
     )
     row_ids = torch.arange(bs, dtype=torch.long, device=device)
     accept_pos = accept_index[row_ids, correct_len.to(torch.long)].to(torch.long)
@@ -225,6 +275,7 @@ def accept_sampling_triton(
     gamma: int,
     verify_num_draft_tokens: int,
     cutoff_verify_lens: Optional[torch.Tensor] = None,
+    csd_runtime=None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     correct_len, cap_trim_lens, accept_index, predicts = _accept_sampling_core(
         candidates=candidates,
@@ -235,6 +286,7 @@ def accept_sampling_triton(
         gamma=gamma,
         verify_num_draft_tokens=verify_num_draft_tokens,
         cutoff_verify_lens=cutoff_verify_lens,
+        csd_runtime=csd_runtime,
     )
     bonus = gather_two_level_bonus_triton(
         accept_index=accept_index, predicts=predicts, correct_len=correct_len
