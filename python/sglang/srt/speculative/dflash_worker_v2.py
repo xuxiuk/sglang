@@ -16,6 +16,7 @@ from sglang.srt.model_executor.forward_batch_info import (
 )
 from sglang.srt.server_args import ServerArgs
 from sglang.srt.speculative.base_spec_worker import BaseSpecWorker
+from sglang.srt.speculative.csd_runtime import CSDRuntime
 from sglang.srt.speculative.dflash_info import DFlashVerifyInput
 from sglang.srt.speculative.dflash_info_v2 import DFlashDraftInputV2
 from sglang.srt.speculative.dflash_utils import (
@@ -25,6 +26,7 @@ from sglang.srt.speculative.dflash_utils import (
     compute_dflash_sampling_correct_drafts_and_bonus,
     is_dflash_sampling_verify_available,
     parse_dflash_draft_config,
+    validate_dflash_csd_table_metadata,
 )
 from sglang.srt.speculative.draft_worker_common import (
     build_block_pos_offsets,
@@ -131,6 +133,7 @@ class DFlashWorkerV2(BaseSpecWorker):
         )
         self.use_compact_draft_cache = self.draft_window_size is not None
         self.device = target_worker.device
+        self.csd_runtime = CSDRuntime.from_server_args(server_args, self.device)
 
         self._warned_sampling_fallback = False
         self._logged_first_verify = False
@@ -171,6 +174,24 @@ class DFlashWorkerV2(BaseSpecWorker):
                     model_block_size,
                 )
         self.speculative_num_draft_tokens = int(self.block_size)
+
+        if self.csd_runtime.enabled:
+            validate_dflash_csd_table_metadata(
+                self.csd_runtime.table_store.metadata,
+                block_size=self.block_size,
+            )
+
+        if self.csd_runtime.enabled and self.tp_rank == 0:
+            logger.info(
+                "DFLASH CSD enabled: table_entries=%d dynamic=%s "
+                "freq_threshold=%d prob_ratio=%g entropy_min=%g entropy_max=%g.",
+                self.csd_runtime.table.num_entries,
+                self.csd_runtime.dynamic_update,
+                self.csd_runtime.freq_threshold,
+                self.csd_runtime.prob_ratio,
+                self.csd_runtime.entropy_min_threshold,
+                self.csd_runtime.entropy_threshold,
+            )
 
         self._mask_token = draft_config.mask_token
         self._mask_token_id_override = draft_config.mask_token_id
@@ -464,6 +485,23 @@ class DFlashWorkerV2(BaseSpecWorker):
         # target state before each draft forward, so there is nothing persistent
         # to flush here.
         pass
+
+    def save_csd_table(self, path: str, metadata=None) -> bool:
+        if not self.csd_runtime.enabled:
+            return False
+        if metadata:
+            self.csd_runtime.table_store.metadata.update(metadata)
+        self.csd_runtime.table_store.metadata.update(
+            {
+                "algorithm": "DFLASH",
+                "tp_rank": int(self.tp_rank),
+                "dp_rank": -1 if self.dp_rank is None else int(self.dp_rank),
+                "block_size": int(self.block_size),
+                "draft_model_path": self.server_args.speculative_draft_model_path,
+            }
+        )
+        self.csd_runtime.save_table(path)
+        return True
 
     def _gather_req_to_token_masked(
         self,
@@ -1203,6 +1241,9 @@ class DFlashWorkerV2(BaseSpecWorker):
         batch: ScheduleBatch,
         on_publish=None,
     ) -> GenerationBatchResult:
+        self.csd_runtime.maybe_apply_async_rebuild(device=self.device)
+        self.csd_runtime.maybe_start_async_rebuild()
+
         if getattr(batch, "return_logprob", False):
             raise ValueError(
                 "DFLASH speculative decoding does not support return_logprob yet."
@@ -1552,6 +1593,7 @@ class DFlashWorkerV2(BaseSpecWorker):
                 sampling_info=sampling_info,
                 max_top_k=draft_input.max_top_k,
                 uniform_top_k_value=draft_input.uniform_top_k_value,
+                csd_runtime=self.csd_runtime,
             )
             commit_lens = accept_len.to(torch.int32) + 1  # [bs]
             out_tokens = torch.empty(
@@ -1565,7 +1607,7 @@ class DFlashWorkerV2(BaseSpecWorker):
             target_predict = torch.argmax(logits_output.next_token_logits, dim=-1).view(
                 bs, int(self.block_size)
             )
-            if self._use_triton_accept_bonus:
+            if self._use_triton_accept_bonus and not self.csd_runtime.enabled:
                 try:
                     (
                         accept_len,
@@ -1593,6 +1635,8 @@ class DFlashWorkerV2(BaseSpecWorker):
                     accept_len, bonus = compute_dflash_correct_drafts_and_bonus(
                         candidates=candidates,
                         target_predict=target_predict,
+                        next_token_logits=logits_output.next_token_logits,
+                        csd_runtime=self.csd_runtime,
                     )
                     commit_lens = accept_len.to(torch.int32) + 1  # [bs]
                     out_tokens = torch.empty(
@@ -1612,6 +1656,8 @@ class DFlashWorkerV2(BaseSpecWorker):
                 accept_len, bonus = compute_dflash_correct_drafts_and_bonus(
                     candidates=candidates,
                     target_predict=target_predict,
+                    next_token_logits=logits_output.next_token_logits,
+                    csd_runtime=self.csd_runtime,
                 )
                 commit_lens = accept_len.to(torch.int32) + 1  # [bs]
                 out_tokens = torch.empty(
