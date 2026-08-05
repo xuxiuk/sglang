@@ -57,6 +57,8 @@ from sglang.srt.managers.io_struct import (
     RemoveExternalCorpusReqOutput,
     ResumeMemoryOccupationReqInput,
     ResumeMemoryOccupationReqOutput,
+    SaveCSDTableReqInput,
+    SaveCSDTableReqOutput,
     SendWeightsToRemoteInstanceReqInput,
     SendWeightsToRemoteInstanceReqOutput,
     SetInternalStateReq,
@@ -114,6 +116,7 @@ _COMMUNICATOR_SPECS = [
     ("profile", ProfileReqOutput),
     ("get_internal_state", GetInternalStateReqOutput),
     ("set_internal_state", SetInternalStateReqOutput),
+    ("save_csd_table", SaveCSDTableReqOutput),
     ("expert_distribution", ExpertDistributionReqOutput),
     ("update_lora_adapter", LoRAUpdateOutput),
     ("get_loads", GetLoadsReqOutput, "watching"),
@@ -795,6 +798,13 @@ class TokenizerControlMixin:
             await self.set_internal_state_communicator(obj)
         )
         return [res.updated for res in responses]
+
+    async def save_csd_table(
+        self: TokenizerManager, obj: SaveCSDTableReqInput
+    ) -> List[SaveCSDTableReqOutput]:
+        """Export one table shard from every DP scheduler."""
+        self.auto_create_handle_loop()
+        return await self.save_csd_table_communicator(obj)
 
     async def dumper_control(
         self: TokenizerManager, obj: DumperControlReqInput

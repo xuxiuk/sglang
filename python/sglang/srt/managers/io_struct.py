@@ -1769,6 +1769,18 @@ class SetInternalStateReqOutput(BaseReq, kw_only=True):
     server_args: Dict[str, Any]
 
 
+class SaveCSDTableReqInput(BaseReq, kw_only=True):
+    path: str
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class SaveCSDTableReqOutput(BaseReq, kw_only=True):
+    success: bool
+    message: str
+    path: str
+    dp_rank: int
+
+
 class ProfileReqType(Enum):
     START_PROFILE = 1
     STOP_PROFILE = 2
@@ -2153,6 +2165,7 @@ _REQ_TYPES_WITH_OPAQUE_FIELDS: tuple[Type[msgspec.Struct], ...] = (
     GetInternalStateReqOutput,  # internal_state: Dict[str, Any]
     SetInternalStateReq,  # server_args: Dict[str, Any]
     SetInternalStateReqOutput,  # server_args: Dict[str, Any]
+    SaveCSDTableReqInput,  # metadata: Optional[Dict[str, Any]]
     VertexGenerateReqInput,  # instances, parameters: Dict[str, Any]
     RpcReqInput,  # parameters: Optional[Dict[str, Any]]
     LoadLoRAAdapterFromTensorsReqInput,  # config_dict, added_tokens_config: Dict[str, Any]

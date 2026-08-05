@@ -39,6 +39,7 @@ from typing import (
     Union,
 )
 
+import msgspec
 import numpy as np
 import requests
 import uvicorn
@@ -129,6 +130,7 @@ from sglang.srt.managers.io_struct import (
     ProfileReq,
     ReleaseMemoryOccupationReqInput,
     ResumeMemoryOccupationReqInput,
+    SaveCSDTableReqInput,
     SendWeightsToRemoteInstanceReqInput,
     SeparateReasoningReqInput,
     SetInternalStateReq,
@@ -755,6 +757,23 @@ async def set_internal_state(
 ):
     res = await _global_state.tokenizer_manager.set_internal_state(obj)
     return res
+
+
+@app.post("/save_csd_table")
+@auth_level(AuthLevel.ADMIN_OPTIONAL)
+async def save_csd_table(
+    obj: Annotated[SaveCSDTableReqInput, Body()], request: Request
+):
+    results = await _global_state.tokenizer_manager.save_csd_table(obj)
+    success = all(result.success for result in results)
+    content = {
+        "success": success,
+        "shards": [msgspec.to_builtins(result) for result in results],
+    }
+    return ORJSONResponse(
+        content=content,
+        status_code=HTTPStatus.OK if success else HTTPStatus.BAD_REQUEST,
+    )
 
 
 # Do not import `dumper.py` to avoid dependency

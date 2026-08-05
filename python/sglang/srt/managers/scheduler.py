@@ -131,6 +131,8 @@ from sglang.srt.managers.io_struct import (
     ResumeMemoryOccupationReqInput,
     RpcReqInput,
     RpcReqOutput,
+    SaveCSDTableReqInput,
+    SaveCSDTableReqOutput,
     SendWeightsToRemoteInstanceReqInput,
     SendWeightsToRemoteInstanceReqOutput,
     SetInternalStateReq,
@@ -1434,6 +1436,7 @@ class Scheduler(
                 (ShutdownReq, self.handle_shutdown),
                 (GetInternalStateReq, self.get_internal_state),
                 (SetInternalStateReq, self.set_internal_state),
+                (SaveCSDTableReqInput, self.handle_save_csd_table),
                 (RpcReqInput, self.handle_rpc_request),
                 (ExpertDistributionReq, self.expert_distribution_handle),
                 (LoadLoRAAdapterReqInput, self.load_lora_adapter),
@@ -3734,14 +3737,24 @@ class Scheduler(
         }
         ret["effective_max_running_requests_per_dp"] = self.max_running_requests
 
-        if (
-            not self.spec_algorithm.is_none()
-            and self.metrics_reporter.spec_total_num_forward_ct > 0
-        ):
-            ret["avg_spec_accept_length"] = (
+        if not self.spec_algorithm.is_none():
+            # Include the current decode-log window as well as the committed
+            # lifetime counters. A task can finish between periodic log
+            # boundaries, and /server_info must still report its exact totals.
+            spec_total_num_accept_tokens = (
                 self.metrics_reporter.spec_total_num_accept_tokens
-                / self.metrics_reporter.spec_total_num_forward_ct
+                + self.metrics_reporter.spec_num_accept_tokens
             )
+            spec_total_num_forward_ct = (
+                self.metrics_reporter.spec_total_num_forward_ct
+                + self.metrics_reporter.spec_num_forward_ct
+            )
+            ret["spec_total_num_accept_tokens"] = spec_total_num_accept_tokens
+            ret["spec_total_num_forward_ct"] = spec_total_num_forward_ct
+            if spec_total_num_forward_ct > 0:
+                ret["avg_spec_accept_length"] = (
+                    spec_total_num_accept_tokens / spec_total_num_forward_ct
+                )
 
         if RECORD_STEP_TIME:
             ret["step_time_dict"] = self.metrics_reporter.step_time_dict
@@ -3753,6 +3766,11 @@ class Scheduler(
             info_record = self.draft_worker.dump_info_records()
             if info_record is not None:
                 ret["dspark_info_record"] = info_record
+
+        if self.draft_worker is not None:
+            csd_runtime = getattr(self.draft_worker, "csd_runtime", None)
+            if csd_runtime is not None and csd_runtime.enabled:
+                ret["csd_metrics"] = csd_runtime.metrics_snapshot()
 
         # This field is not serializable.
         ret.pop("model_config", None)
@@ -3844,6 +3862,31 @@ class Scheduler(
             updated=if_success,
             server_args=msgspec_to_builtins(server_args),
         )
+
+    def handle_save_csd_table(
+        self, recv_req: SaveCSDTableReqInput
+    ) -> SaveCSDTableReqOutput:
+        dp_rank = 0 if self.ps.dp_rank is None else int(self.ps.dp_rank)
+        path = recv_req.path
+        if self.server_args.dp_size > 1:
+            stem, suffix = os.path.splitext(path)
+            path = f"{stem}.dp{dp_rank}{suffix or '.json'}"
+        try:
+            if self.spec_algorithm.is_none():
+                raise ValueError("CSD table export requires speculative decoding.")
+            save = getattr(self.draft_worker, "save_csd_table", None)
+            if save is None or not save(path, recv_req.metadata):
+                raise ValueError(
+                    "The active speculative worker has no enabled CSD runtime."
+                )
+            return SaveCSDTableReqOutput(
+                success=True, message="", path=path, dp_rank=dp_rank
+            )
+        except Exception as exc:
+            logger.exception("Failed to save CSD table shard")
+            return SaveCSDTableReqOutput(
+                success=False, message=str(exc), path=path, dp_rank=dp_rank
+            )
 
     def save_remote_model(self, **kwargs):
         self.weight_updater.save_remote_model(kwargs)
