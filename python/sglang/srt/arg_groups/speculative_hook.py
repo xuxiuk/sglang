@@ -124,8 +124,66 @@ def handle_speculative_decoding(server_args: ServerArgs) -> None:
         if server_args.speculative_adaptive:
             _init_adaptive_speculative_params(server_args)
 
+    _validate_csd(server_args)
+
     if algo is not None:
         algo.handle_server_args(server_args)
+
+
+def _validate_csd(server_args: ServerArgs) -> None:
+    if not server_args.speculative_csd_enabled:
+        if server_args.speculative_csd_dynamic_update_ignore_prob_ratio:
+            raise ValueError(
+                "--speculative-csd-dynamic-update-ignore-prob-ratio requires --speculative-csd."
+            )
+        return
+    from sglang.srt.speculative.spec_info import SpeculativeAlgorithm
+
+    if not server_args.device.startswith("cuda"):
+        raise ValueError("CSD speculative decoding currently only supports CUDA.")
+    algorithm = SpeculativeAlgorithm.from_string(server_args.speculative_algorithm)
+    if not (algorithm.is_dspark() or algorithm.is_dflash() or algorithm.is_eagle()):
+        raise ValueError(
+            "--speculative-csd currently supports DSPARK, DFLASH, and the MTP/EAGLE family."
+        )
+    if server_args.speculative_csd_freq_threshold < 1:
+        raise ValueError("--speculative-csd-freq-threshold must be at least 1.")
+    if not 0 < server_args.speculative_csd_prob_ratio <= 1:
+        raise ValueError("--speculative-csd-prob-ratio must be in (0, 1].")
+    entropy = server_args.speculative_csd_force_accept_entropy_threshold
+    if entropy < 0 and entropy != -1:
+        raise ValueError(
+            "--speculative-csd-force-accept-entropy-threshold must be -1 or non-negative."
+        )
+    entropy_min = server_args.speculative_csd_force_accept_entropy_min_threshold
+    if entropy_min < 0 and entropy_min != -1:
+        raise ValueError(
+            "--speculative-csd-force-accept-entropy-min-threshold must be -1 or non-negative."
+        )
+    if entropy >= 0 and entropy_min >= 0 and entropy_min > entropy:
+        raise ValueError(
+            "CSD entropy minimum threshold cannot exceed the maximum threshold."
+        )
+    if (
+        server_args.speculative_csd_dynamic_update_ignore_prob_ratio
+        and not server_args.speculative_csd_dynamic_update
+    ):
+        raise ValueError(
+            "--speculative-csd-dynamic-update-ignore-prob-ratio requires --speculative-csd-dynamic-update."
+        )
+    if (
+        not server_args.speculative_csd_dynamic_update
+        and server_args.speculative_csd_table_path is None
+    ):
+        raise ValueError(
+            "--speculative-csd requires a table path or --speculative-csd-dynamic-update."
+        )
+    if server_args.speculative_csd_delta_capacity is None:
+        server_args.speculative_csd_delta_capacity = max(
+            2 * server_args.speculative_csd_rebuild_threshold, 1 << 20
+        )
+    if server_args.speculative_csd_delta_capacity < 1:
+        raise ValueError("--speculative-csd-delta-capacity must be at least 1.")
 
 
 def _handle_dflash(server_args: ServerArgs) -> None:
