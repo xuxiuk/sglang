@@ -4,7 +4,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from numbers import Integral
-from typing import Any, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -12,7 +12,11 @@ import torch.nn.functional as F
 from sglang.srt.layers.quantization.unquant import UnquantizedLinearMethod
 from sglang.srt.layers.sampler import apply_custom_logit_processor
 from sglang.srt.managers.schedule_batch import Req
+from sglang.srt.speculative.csd_runtime import csd_kernel_kwargs
 from sglang.srt.utils import is_cuda, is_musa
+
+if TYPE_CHECKING:
+    from sglang.srt.speculative.csd_runtime import CSDRuntime
 
 DEFAULT_DFLASH_MASK_TOKEN = "<|MASK|>"
 
@@ -38,6 +42,7 @@ if is_cuda() or is_musa():
             top_k_renorm_prob,
             top_p_renorm_prob,
             tree_speculative_sampling_target_only,
+            verify_tree_greedy,
         )
 
         _DFLASH_SAMPLING_VERIFY_AVAILABLE = True
@@ -45,14 +50,49 @@ if is_cuda() or is_musa():
         top_k_renorm_prob = None
         top_p_renorm_prob = None
         tree_speculative_sampling_target_only = None
+        verify_tree_greedy = None
 else:
     top_k_renorm_prob = None
     top_p_renorm_prob = None
     tree_speculative_sampling_target_only = None
+    verify_tree_greedy = None
 
 
 def is_dflash_sampling_verify_available() -> bool:
     return _DFLASH_SAMPLING_VERIFY_AVAILABLE
+
+
+def validate_dflash_csd_table_metadata(
+    metadata: dict[str, Any], *, block_size: int
+) -> None:
+    """Reject an explicitly incompatible calibration table.
+
+    Older tables recorded the backend under either the top-level metadata or
+    the nested benchmark ``speculative`` section.  Missing fields remain
+    accepted for backward compatibility, but a table that identifies itself as
+    MTP/DSpark or records another DFlash block size must not be used silently.
+    """
+    speculative = metadata.get("speculative", {})
+    if not isinstance(speculative, dict):
+        speculative = {}
+    algorithm = (
+        metadata.get("algorithm")
+        or metadata.get("speculative_algorithm")
+        or speculative.get("algorithm")
+    )
+    if algorithm is not None and str(algorithm).upper() != "DFLASH":
+        raise ValueError(
+            "DFLASH CSD requires a DFlash calibration table, "
+            f"but metadata algorithm={algorithm!r}."
+        )
+    recorded_block_size = metadata.get("block_size")
+    if recorded_block_size is None:
+        recorded_block_size = speculative.get("num_draft_tokens")
+    if recorded_block_size is not None and int(recorded_block_size) != int(block_size):
+        raise ValueError(
+            "DFLASH CSD table block size mismatch: "
+            f"runtime block_size={block_size}, table block_size={recorded_block_size}."
+        )
 
 
 def scale_kv_cell_size_per_token_for_dflash(
@@ -565,6 +605,8 @@ def compute_dflash_correct_drafts_and_bonus(
     *,
     candidates: torch.Tensor,
     target_predict: torch.Tensor,
+    next_token_logits: Optional[torch.Tensor] = None,
+    csd_runtime: Optional["CSDRuntime"] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Compute DFlash accept lengths and bonus tokens (greedy verify rule).
 
@@ -596,6 +638,61 @@ def compute_dflash_correct_drafts_and_bonus(
     if block_size <= 0:
         raise ValueError(f"block_size must be positive, got {block_size}.")
 
+    # Bare DFlash keeps the compact vectorized/Triton path in the worker.  CSD
+    # reuses the common linear-tree verifier so DFlash, MTP and DSpark share
+    # exactly the same lookup, force-accept and delta-collection semantics.
+    if csd_runtime is not None and csd_runtime.enabled:
+        if not _DFLASH_SAMPLING_VERIFY_AVAILABLE or verify_tree_greedy is None:
+            raise RuntimeError(
+                "DFLASH CSD greedy verification requires the speculative CUDA kernel."
+            )
+        if next_token_logits is None:
+            raise ValueError(
+                "next_token_logits is required when CSD is enabled for DFLASH."
+            )
+        if next_token_logits.ndim != 2 or next_token_logits.shape[0] != bs * block_size:
+            raise ValueError(
+                "next_token_logits shape mismatch for DFLASH CSD greedy verify. "
+                f"Expected ({bs * block_size}, vocab_size), got "
+                f"{tuple(next_token_logits.shape)}."
+            )
+
+        (
+            retrieve_index,
+            retrieve_next_token,
+            retrieve_next_sibling,
+            predicts,
+            accept_index,
+            accept_token_num,
+        ) = _get_or_create_chain_verify_buffers(
+            bs=bs,
+            draft_token_num=block_size,
+            device=candidates.device,
+        )
+        candidates_i64 = (
+            candidates
+            if candidates.dtype == torch.int64
+            else candidates.to(torch.int64)
+        )
+        verify_tree_greedy(
+            predicts=predicts,
+            accept_index=accept_index,
+            accept_token_num=accept_token_num,
+            candidates=candidates_i64,
+            retrive_index=retrieve_index,
+            retrive_next_token=retrieve_next_token,
+            retrive_next_sibling=retrieve_next_sibling,
+            target_predict=target_predict,
+            target_logits=next_token_logits.reshape(bs, block_size, -1),
+            **csd_kernel_kwargs(csd_runtime, include_entropy=False),
+        )
+        row_ids = torch.arange(bs, dtype=torch.long, device=candidates.device)
+        accept_pos = accept_index[row_ids, accept_token_num.to(torch.long)].to(
+            torch.long
+        )
+        bonus = predicts[accept_pos].to(torch.int64)
+        return accept_token_num, bonus
+
     matches = candidates[:, 1:] == target_predict[:, :-1]
     correct_len = matches.to(torch.int32).cumprod(dim=1).sum(dim=1)
     bonus = target_predict[torch.arange(bs, device=target_predict.device), correct_len]
@@ -614,6 +711,7 @@ def compute_dflash_sampling_correct_drafts_and_bonus(
     uniform_samples: Optional[torch.Tensor] = None,
     uniform_samples_for_final_sampling: Optional[torch.Tensor] = None,
     use_sparse_topk: bool = True,
+    csd_runtime: Optional["CSDRuntime"] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Compute DFlash accept lengths and bonus tokens for non-greedy sampling.
 
@@ -728,6 +826,8 @@ def compute_dflash_sampling_correct_drafts_and_bonus(
         uniform_samples_for_final_sampling=uniform_samples_for_final_sampling,
         target_probs=target_probs,
         draft_probs=draft_probs,
+        target_logits=next_token_logits.reshape(bs, draft_token_num, -1),
+        **csd_kernel_kwargs(csd_runtime, include_entropy=True),
         threshold_single=threshold_single,
         threshold_acc=threshold_acc,
         deterministic=True,
