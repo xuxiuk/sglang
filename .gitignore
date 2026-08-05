@@ -283,3 +283,9 @@ test/registered/xpu/test_nvidia_nemotron_3_nano.py
 artifacts/
 .claude/scheduled_tasks.lock
 .humanize/
+# Local DSpark reproduction materials (not part of the CSD deliverable)
+/.litellm_cache/
+/ACL 2026_main-3437.pptx
+/DSPARK_BLOG_REPRODUCTION_CN.md
+/DSPARK_CSD_DEV_ENV_CN.md
+/DSPARK_FIGURE1_REPRODUCTION_CN.md
