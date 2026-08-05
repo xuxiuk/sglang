@@ -1,0 +1,96 @@
+diff --git a/csrc/api/sparse_decode.h b/csrc/api/sparse_decode.h
+--- a/csrc/api/sparse_decode.h
++++ b/csrc/api/sparse_decode.h
+@@ -5,8 +5,10 @@
+ #include "params.h"
+ 
+ #include "sm90/decode/sparse_fp8/splitkv_mla.h"
++#ifdef FLASHMLA_ENABLE_SM100
+ #include "sm100/decode/head64/kernel.h"
+ #include "sm100/prefill/sparse/fwd_for_small_topk/head128/phase1.h"
++#endif
+ #include "smxx/decode/get_decoding_sched_meta/get_decoding_sched_meta.h"
+ #include "smxx/decode/combine/combine.h"
+ 
+@@ -70,6 +72,7 @@ protected:
+     }
+ };
+ 
++#ifdef FLASHMLA_ENABLE_SM100
+ class Decode_Sm100_Head64_Impl : public DecodeImplBase {
+     DECLARE_SUPPORTED_FEATURES(
+         DecodeFeatures::HEAD_64,
+@@ -179,6 +182,7 @@ protected:
+         sm100::fwd_for_small_topk::head128::run_fwd_for_small_topk_phase1_kernel<SparseAttnFwdMode::DecodeWithSplitKV, 512>(params);
+     }
+ };
++#endif
+ 
+ static std::tuple<at::Tensor, at::Tensor, std::optional<at::Tensor>, std::optional<at::Tensor>>
+ sparse_attn_decode_interface(
+@@ -360,6 +364,7 @@ sparse_attn_decode_interface(
+     }
+ 
+     DecodeImplBase* impl;
++#ifdef FLASHMLA_ENABLE_SM100
+     if (arch.is_sm100f()) {
+         if (h_q == 64) {
+             impl = new Decode_Sm100_Head64_Impl();
+@@ -374,7 +379,9 @@ sparse_attn_decode_interface(
+         } else {
+             TORCH_CHECK(false, "Unsupported h_q: ", h_q);
+         }
+-    } else if (arch.is_sm90a()) {
++    } else
++#endif
++    if (arch.is_sm90a()) {
+         impl = new Decode_Sm90_Impl();
+     } else {
+         TORCH_CHECK(false, "Unsupported architecture for sparse decode fwd");
+diff --git a/csrc/api/sparse_fwd.h b/csrc/api/sparse_fwd.h
+--- a/csrc/api/sparse_fwd.h
++++ b/csrc/api/sparse_fwd.h
+@@ -5,9 +5,11 @@
+ #include "params.h"
+ 
+ #include "sm90/prefill/sparse/phase1.h"
++#ifdef FLASHMLA_ENABLE_SM100
+ #include "sm100/prefill/sparse/fwd/head128/phase1.h"
+ #include "sm100/prefill/sparse/fwd/head64/phase1.h"
+ #include "sm100/prefill/sparse/fwd_for_small_topk/head128/phase1.h"
++#endif
+ 
+ enum class FwdFeatures : int {
+     HEAD_64,
+@@ -45,6 +47,7 @@ protected:
+     }
+ };
+ 
++#ifdef FLASHMLA_ENABLE_SM100
+ class Fwd_Sm100_Head64_Impl : public FwdImplBase {
+     DECLARE_SUPPORTED_FEATURES(
+         FwdFeatures::HEAD_64,
+@@ -97,6 +100,7 @@ protected:
+         sm100::fwd_for_small_topk::head128::run_fwd_for_small_topk_phase1_kernel<SparseAttnFwdMode::Prefill, 512>(params);
+     }
+ };
++#endif
+ 
+ static std::vector<at::Tensor> sparse_attn_prefill_interface(
+     const at::Tensor &q,
+@@ -213,6 +217,7 @@ static std::vector<at::Tensor> sparse_attn_prefill_interface(
+     if (is_sm90a) {
+         Fwd_Sm90_Impl fwd_impl;
+         fwd_impl.run(params, required_features);
++#ifdef FLASHMLA_ENABLE_SM100
+     } else if (is_sm100f) {
+         if (h_q == 64) {
+             Fwd_Sm100_Head64_Impl fwd_impl;
+@@ -235,6 +240,7 @@ static std::vector<at::Tensor> sparse_attn_prefill_interface(
+         } else {
+             TORCH_CHECK(false, "Unsupported h_q: ", h_q);
+         }
++#endif
+     } else {
+         TORCH_CHECK(false, "Unsupported architecture");
+     }
