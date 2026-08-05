@@ -18,6 +18,7 @@ from sglang.srt.model_executor.forward_batch_info import (
 from sglang.srt.sampling.sampling_params import TOP_K_ALL
 from sglang.srt.server_args import ServerArgs
 from sglang.srt.speculative.base_spec_worker import BaseSpecWorker
+from sglang.srt.speculative.csd_runtime import CSDRuntime
 from sglang.srt.speculative.dflash_info import DFlashVerifyInput
 from sglang.srt.speculative.dflash_info_v2 import DFlashDraftInputV2
 from sglang.srt.speculative.dflash_utils import (
@@ -127,6 +128,7 @@ class DSparkWorkerV2(BaseSpecWorker):
         self.model_runner = target_worker.model_runner
         self.page_size = server_args.page_size
         self.device = target_worker.device
+        self.csd_runtime = CSDRuntime.from_server_args(server_args, self.device)
 
         self._draft_is_moe = draft_is_deepseek_v4(server_args=server_args)
         self._draft_dp_context_enabled = (
@@ -214,6 +216,17 @@ class DSparkWorkerV2(BaseSpecWorker):
                 self._mask_token_id,
                 type(self.draft_model.markov_head).__name__,
             )
+            if self.csd_runtime.enabled:
+                logger.info(
+                    "DSpark CSD enabled: table_entries=%d dynamic=%s "
+                    "freq_threshold=%d prob_ratio=%g entropy_min=%g entropy_max=%g.",
+                    self.csd_runtime.table.num_entries,
+                    self.csd_runtime.dynamic_update,
+                    self.csd_runtime.freq_threshold,
+                    self.csd_runtime.prob_ratio,
+                    self.csd_runtime.entropy_min_threshold,
+                    self.csd_runtime.entropy_threshold,
+                )
 
         self._block_pos_offsets = build_block_pos_offsets(
             length=self.verify_num_draft_tokens, device=self.device
@@ -481,7 +494,27 @@ class DSparkWorkerV2(BaseSpecWorker):
         )
 
     def clear_cache_pool(self):
-        pass
+        # one_batch_server flushes the cache between benchmark points.  Persist
+        # any partial STS shard here so calibration data is not lost merely
+        # because a run ended before the periodic 256-step flush boundary.
+        if self._sts_recorder is not None:
+            self._sts_recorder.flush()
+
+    def save_csd_table(self, path: str, metadata=None) -> bool:
+        if not self.csd_runtime.enabled:
+            return False
+        if metadata:
+            self.csd_runtime.table_store.metadata.update(metadata)
+        self.csd_runtime.table_store.metadata.update(
+            {
+                "algorithm": "DSPARK",
+                "tp_rank": int(self.tp_rank),
+                "dp_rank": -1 if self.dp_rank is None else int(self.dp_rank),
+                "gamma": int(self.gamma),
+            }
+        )
+        self.csd_runtime.save_table(path)
+        return True
 
     def set_dspark_forced_budget_frac(self, frac: Optional[float]) -> None:
         self._forced_budget_frac = frac
@@ -539,6 +572,13 @@ class DSparkWorkerV2(BaseSpecWorker):
         batch: ScheduleBatch,
         on_publish=None,
     ) -> GenerationBatchResult:
+        # DP-attention may give a rank an idle/dummy local batch while peers
+        # decode real requests.  Drive CSD rebuild coordination before any
+        # forward-mode branch so every model rank enters DP collectives in the
+        # same order.  Deltas produced below are picked up on a later step.
+        self.csd_runtime.maybe_apply_async_rebuild(device=self.device)
+        self.csd_runtime.maybe_start_async_rebuild()
+
         if getattr(batch, "return_logprob", False):
             raise ValueError(
                 "DSpark speculative decoding does not support return_logprob yet."
@@ -818,6 +858,7 @@ class DSparkWorkerV2(BaseSpecWorker):
             and proposal.folded
             and verify_logits_adjustments_are_noop(sampling_info)
             and self._simulate_acc_len <= 0
+            and not self.csd_runtime.enabled
         )
         with self._info_dumper.segment(InfoSegment.TARGET_VERIFY):
             if run_compact:
@@ -863,6 +904,7 @@ class DSparkWorkerV2(BaseSpecWorker):
                 gamma=self.gamma,
                 verify_num_draft_tokens=self.verify_num_draft_tokens,
                 cutoff_layout=layout,
+                csd_runtime=self.csd_runtime,
             )
             if self._simulate_acc_len > 0:
                 correct_len = self._simulated_correct_len(
@@ -1069,8 +1111,12 @@ class DSparkWorkerV2(BaseSpecWorker):
         if confidence_raw is None:
             return
         if self._sts_recorder is None:
+            dp_rank = -1 if self.dp_rank is None else int(self.dp_rank)
+            ranked_path_stem = f"{collect_path}.dp{dp_rank}.tp{int(self.tp_rank)}"
             self._sts_recorder = StsDataRecorder(
-                path_stem=collect_path,
+                # Every DP/TP worker is a separate process.  A shared stem would
+                # make them race on `<stem>.0.pt`; keep every rank's samples.
+                path_stem=ranked_path_stem,
                 gamma=self.gamma,
                 flush_every=_STS_COLLECT_FLUSH_EVERY,
             )
