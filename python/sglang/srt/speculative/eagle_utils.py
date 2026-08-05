@@ -12,6 +12,7 @@ from sglang.srt.mem_cache.common import (
     get_alloc_reserve_per_decode,
     get_last_loc,
 )
+from sglang.srt.speculative.csd_runtime import csd_kernel_kwargs
 from sglang.srt.utils import is_cuda, is_hip, is_musa, is_npu
 from sglang.srt.utils.async_probe import maybe_detect_oob
 
@@ -234,6 +235,8 @@ def verify_tree_greedy_func(
     retrieve_next_sibling: torch.Tensor,
     target_predict: torch.Tensor,
     topk: int = -1,
+    target_logits: Optional[torch.Tensor] = None,
+    csd_runtime=None,
 ):
     if _is_cuda or _is_hip or _is_musa:
         from sgl_kernel import verify_tree_greedy
@@ -248,6 +251,8 @@ def verify_tree_greedy_func(
             retrive_next_token=retrieve_next_token,
             retrive_next_sibling=retrieve_next_sibling,
             target_predict=target_predict,
+            target_logits=target_logits,
+            **csd_kernel_kwargs(csd_runtime, include_entropy=False),
         )
 
     elif _is_npu:
@@ -399,6 +404,7 @@ def eagle_sample(
     batch: ScheduleBatch,
     logits_output: LogitsProcessorOutput,
     vocab_mask: torch.Tensor = None,
+    csd_runtime=None,
 ):
     """
     Verify and find accepted tokens based on logits output and batch
@@ -487,6 +493,10 @@ def eagle_sample(
             retrieve_next_sibling=verify_input.retrieve_next_sibling,
             target_predict=target_predict,
             topk=verify_input.tree_topk,
+            target_logits=next_token_logits.reshape(
+                bs, verify_input.draft_token_num, -1
+            ),
+            csd_runtime=csd_runtime,
         )
     else:
         from sgl_kernel import (
@@ -549,28 +559,40 @@ def eagle_sample(
         # coins for final sampling
         coins_for_final_sampling = torch.rand((bs,), dtype=torch.float32, device=device)
 
-        sampling_fn = (
-            chain_speculative_sampling_triton
-            if use_rejection_sampling
-            else tree_speculative_sampling_target_only
-        )
-        sampling_fn(
-            predicts=predict,  # mutable
-            accept_index=accept_index,  # mutable
-            accept_token_num=num_correct_drafts,  # mutable
-            candidates=candidates,
+        sampling_kwargs = {
+            "predicts": predict,
+            "accept_index": accept_index,
+            "accept_token_num": num_correct_drafts,
+            "candidates": candidates,
             # kwarg LHS retained as `retrive_*` to match sgl_kernel op schema.
-            retrive_index=verify_input.retrieve_index,
-            retrive_next_token=verify_input.retrieve_next_token,
-            retrive_next_sibling=verify_input.retrieve_next_sibling,
-            uniform_samples=coins,
-            uniform_samples_for_final_sampling=coins_for_final_sampling,
-            target_probs=target_probs,
-            draft_probs=draft_probs,
-            threshold_single=get_global_server_args().speculative_accept_threshold_single,
-            threshold_acc=get_global_server_args().speculative_accept_threshold_acc,
-            deterministic=True,
-        )
+            "retrive_index": verify_input.retrieve_index,
+            "retrive_next_token": verify_input.retrieve_next_token,
+            "retrive_next_sibling": verify_input.retrieve_next_sibling,
+            "uniform_samples": coins,
+            "uniform_samples_for_final_sampling": coins_for_final_sampling,
+            "target_probs": target_probs,
+            "draft_probs": draft_probs,
+            "threshold_single": get_global_server_args().speculative_accept_threshold_single,
+            "threshold_acc": get_global_server_args().speculative_accept_threshold_acc,
+            "deterministic": True,
+        }
+        if use_rejection_sampling and not (
+            csd_runtime is not None and csd_runtime.enabled
+        ):
+            chain_speculative_sampling_triton(**sampling_kwargs)
+        else:
+            # CSD is fused into the CUDA tree verifier.  Its rejection-sampling
+            # mode preserves the same p/q acceptance rule while adding table
+            # lookup and gates; without CSD the existing Triton fast path stays
+            # untouched.
+            tree_speculative_sampling_target_only(
+                **sampling_kwargs,
+                target_logits=next_token_logits.reshape(
+                    bs, verify_input.draft_token_num, -1
+                ),
+                use_rejection_sampling=use_rejection_sampling,
+                **csd_kernel_kwargs(csd_runtime, include_entropy=True),
+            )
 
         # Sync sampling results across TP ranks: different GPUs may
         # produce slightly different target_probs due to floating-point
