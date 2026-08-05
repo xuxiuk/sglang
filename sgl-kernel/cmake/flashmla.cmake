@@ -40,6 +40,36 @@ if(${CUDA_VERSION} VERSION_GREATER 12.8)
     )
     set(FLASHMLA_ENABLE_SM100 ON)
 endif()
+
+# FlashMLA's pinned API headers reference SM100 implementations even when the
+# corresponding CUDA sources are not part of the target.  CUDA 12.8 cannot
+# compile those sources, so keep the optional SM100 API behind the same feature
+# definition as the source list.  Without this patch the SM90 shared object is
+# created with unresolved SM100 symbols and fails to import on Hopper.
+if(NOT FLASHMLA_ENABLE_SM100)
+    set(FLASHMLA_SM90_API_PATCH
+        "${CMAKE_CURRENT_LIST_DIR}/patches/flashmla-sm90-api-only.patch")
+    set(FLASHMLA_SPARSE_DECODE_HEADER
+        "${repo-flashmla_SOURCE_DIR}/csrc/api/sparse_decode.h")
+    file(READ "${FLASHMLA_SPARSE_DECODE_HEADER}" FLASHMLA_SPARSE_DECODE_CONTENT)
+    string(FIND "${FLASHMLA_SPARSE_DECODE_CONTENT}"
+        "#ifdef FLASHMLA_ENABLE_SM100" FLASHMLA_SM90_API_PATCHED)
+    if(FLASHMLA_SM90_API_PATCHED EQUAL -1)
+        execute_process(
+            COMMAND patch --forward --batch -p1 -i "${FLASHMLA_SM90_API_PATCH}"
+            WORKING_DIRECTORY "${repo-flashmla_SOURCE_DIR}"
+            RESULT_VARIABLE FLASHMLA_SM90_API_PATCH_RESULT
+            OUTPUT_VARIABLE FLASHMLA_SM90_API_PATCH_STDOUT
+            ERROR_VARIABLE FLASHMLA_SM90_API_PATCH_STDERR
+        )
+        if(NOT FLASHMLA_SM90_API_PATCH_RESULT EQUAL 0)
+            message(FATAL_ERROR
+                "Failed to patch FlashMLA for an SM90-only build:\n"
+                "${FLASHMLA_SM90_API_PATCH_STDOUT}\n${FLASHMLA_SM90_API_PATCH_STDERR}")
+        endif()
+        message(STATUS "Patched FlashMLA API headers for an SM90-only build")
+    endif()
+endif()
 if(${CUDA_VERSION} VERSION_GREATER_EQUAL "13.0")
     # Patch FlashMLA sources for SM103a support.
     # These patches are only needed (and only valid) with CUDA 13+.
