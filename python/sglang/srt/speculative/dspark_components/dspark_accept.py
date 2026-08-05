@@ -27,6 +27,7 @@ def accept_draft_tokens(
     gamma: int,
     verify_num_draft_tokens: int,
     cutoff_layout: Optional[RaggedVerifyLayout] = None,
+    csd_runtime=None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     greedy_mask = draft_block.greedy_mask
     cutoff_verify_lens = None if cutoff_layout is None else cutoff_layout.verify_lens
@@ -37,6 +38,7 @@ def accept_draft_tokens(
             target_logits=target_logits,
             verify_num_draft_tokens=verify_num_draft_tokens,
             cutoff_verify_lens=cutoff_verify_lens,
+            csd_runtime=csd_runtime,
         )
     bs, gamma_rows, vocab = draft_block.corrected_logits.shape
     draft_probs = SoftmaxTemp.execute(
@@ -54,12 +56,19 @@ def accept_draft_tokens(
             gamma=gamma,
             verify_num_draft_tokens=verify_num_draft_tokens,
             cutoff_verify_lens=cutoff_verify_lens,
+            csd_runtime=csd_runtime,
         )
+    # The stock mixed path evaluates greedy and sampling for every row and then
+    # selects one result. CSD updates state inside verification, so enabling it
+    # here would record the unused path as well. Preserve baseline semantics for
+    # heterogeneous batches; homogeneous greedy/sampling batches use CSD fully.
+    mixed_csd_runtime = None
     greedy_len, greedy_bonus, greedy_trim = AcceptGreedy.execute(
         candidates=candidates,
         target_logits=target_logits,
         verify_num_draft_tokens=verify_num_draft_tokens,
         cutoff_verify_lens=cutoff_verify_lens,
+        csd_runtime=mixed_csd_runtime,
     )
     sampling_len, sampling_bonus, sampling_trim = AcceptSampling.execute(
         candidates=candidates,
@@ -70,6 +79,7 @@ def accept_draft_tokens(
         gamma=gamma,
         verify_num_draft_tokens=verify_num_draft_tokens,
         cutoff_verify_lens=cutoff_verify_lens,
+        csd_runtime=mixed_csd_runtime,
     )
     selected = SelectMixedAccept.execute(
         greedy_mask=greedy_mask,
