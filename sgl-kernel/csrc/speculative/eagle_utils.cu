@@ -268,7 +268,65 @@ void build_tree_kernel_efficient(
   }
 }
 
-template <typename IdType, typename IdType2>
+static constexpr int64_t CSD_EMPTY_KEY = -1;
+
+__device__ __forceinline__ uint64_t CsdHash64(uint64_t key) {
+  key = (key ^ (key >> 30)) * 0xbf58476d1ce4e5b9ULL;
+  key = (key ^ (key >> 27)) * 0x94d049bb133111ebULL;
+  return key ^ (key >> 31);
+}
+
+__device__ __forceinline__ int64_t CsdPackPair(int64_t lhs_token, int64_t rhs_token) {
+  return static_cast<int64_t>(
+      (static_cast<uint64_t>(lhs_token) << 32) | (static_cast<uint64_t>(rhs_token) & 0xffffffffULL));
+}
+
+__device__ __forceinline__ bool CsdHashContains(
+    const int64_t* keys,
+    uint32_t capacity,
+    uint32_t max_probe,
+    int64_t key) {
+  if (capacity == 0 || key == CSD_EMPTY_KEY) {
+    return false;
+  }
+
+  uint32_t slot = static_cast<uint32_t>(
+      CsdHash64(static_cast<uint64_t>(key)) & static_cast<uint64_t>(capacity - 1));
+  for (uint32_t probe = 0; probe < max_probe; ++probe) {
+    int64_t existing_key = keys[slot];
+    if (existing_key == key) {
+      return true;
+    }
+    if (existing_key == CSD_EMPTY_KEY) {
+      return false;
+    }
+    slot = (slot + 1) & (capacity - 1);
+  }
+  return false;
+}
+
+__device__ __forceinline__ void CsdAtomicAddI64(int64_t* value, unsigned long long increment) {
+  atomicAdd(reinterpret_cast<unsigned long long*>(value), increment);
+}
+
+__device__ __forceinline__ void CsdAppendDelta(
+    int64_t* delta_pairs,
+    int32_t* delta_counter,
+    int64_t* delta_pair_ct,
+    uint32_t delta_capacity,
+    int64_t key) {
+  if (delta_capacity == 0 || key == CSD_EMPTY_KEY) {
+    return;
+  }
+
+  int32_t pos = atomicAdd(delta_counter, 1);
+  if (pos >= 0 && static_cast<uint32_t>(pos) < delta_capacity) {
+    delta_pairs[pos] = key;
+    CsdAtomicAddI64(delta_pair_ct, 1ULL);
+  }
+}
+
+template <typename DType, typename IdType, typename IdType2>
 __global__ void VerifyTreeGreedy(
     IdType* predicts,
     IdType* accept_index,
@@ -278,9 +336,25 @@ __global__ void VerifyTreeGreedy(
     IdType2* retrive_next_token,
     IdType2* retrive_next_sibling,
     IdType2* target_predict,
+    DType* target_logits,
     uint32_t batch_size,
     uint32_t num_speculative_tokens,
-    uint32_t num_draft_tokens) {
+    uint32_t num_draft_tokens,
+    uint32_t d,
+    const int64_t* csd_table_keys,
+    int64_t* csd_delta_pairs,
+    int32_t* csd_delta_counter,
+    int64_t* csd_lookup_hit_ct,
+    int64_t* csd_forced_accept_ct,
+    int64_t* csd_delta_pair_ct,
+    uint32_t csd_table_capacity,
+    uint32_t csd_table_max_probe,
+    uint32_t csd_delta_capacity,
+    bool csd_enabled,
+    bool csd_dynamic_update,
+    bool csd_dynamic_update_ignore_prob_ratio,
+    bool csd_force_accept_disabled,
+    DType csd_logit_margin) {
   uint32_t bx = blockIdx.x;
 
   IdType2 last_accepted_retrive_idx = retrive_index[bx * num_draft_tokens];
@@ -295,9 +369,35 @@ __global__ void VerifyTreeGreedy(
       IdType2 draft_token_id = candidates[bx * num_draft_tokens + cur_index];
       IdType2 target_token_id = target_predict[last_accepted_retrive_idx];
 
-      if (draft_token_id == target_token_id) {
+      bool normal_accept = draft_token_id == target_token_id;
+      bool csd_force_accept = false;
+
+      if (!normal_accept && (csd_enabled || csd_dynamic_update)) {
+        int64_t csd_pair_key = CsdPackPair(draft_token_id, target_token_id);
+        size_t target_logit_offset = static_cast<size_t>(last_accepted_retrive_idx) * d;
+        DType draft_logit = target_logits[target_logit_offset + draft_token_id];
+        DType target_logit = target_logits[target_logit_offset + target_token_id];
+        bool csd_logit_pass = draft_logit >= target_logit + csd_logit_margin;
+        if (csd_dynamic_update && (csd_dynamic_update_ignore_prob_ratio || csd_logit_pass)) {
+          CsdAppendDelta(csd_delta_pairs, csd_delta_counter, csd_delta_pair_ct, csd_delta_capacity, csd_pair_key);
+        }
+
+        bool table_hit =
+            csd_enabled && CsdHashContains(csd_table_keys, csd_table_capacity, csd_table_max_probe, csd_pair_key);
+        if (table_hit) {
+          CsdAtomicAddI64(csd_lookup_hit_ct, 1ULL);
+        }
+        if (table_hit && !csd_force_accept_disabled) {
+          csd_force_accept = csd_logit_pass;
+          if (csd_force_accept) {
+            CsdAtomicAddI64(csd_forced_accept_ct, 1ULL);
+          }
+        }
+      }
+
+      if (normal_accept || csd_force_accept) {
         // accept token
-        predicts[last_accepted_retrive_idx] = target_token_id;
+        predicts[last_accepted_retrive_idx] = draft_token_id;
         ++num_accepted_tokens;
         accept_index[bx * num_speculative_tokens + num_accepted_tokens] = draft_index;
         last_accepted_retrive_idx = draft_index;
@@ -320,6 +420,7 @@ __global__ void VerifyTreeGreedy(
 // retrive_next_token: [bs, num_draft_tokens]
 // retrive_next_sibling: [bs, num_draft_tokens]
 // target_predict: [bs, num_draft_tokens]
+// target_logits: [bs, num_draft_tokens, vocab_size]
 void verify_tree_greedy(
     at::Tensor predicts,
     at::Tensor accept_index,
@@ -328,18 +429,47 @@ void verify_tree_greedy(
     at::Tensor retrive_index,
     at::Tensor retrive_next_token,
     at::Tensor retrive_next_sibling,
-    at::Tensor target_predict) {
+    at::Tensor target_predict,
+    at::Tensor target_logits,
+    at::Tensor csd_table_keys,
+    at::Tensor csd_delta_pairs,
+    at::Tensor csd_delta_counter,
+    at::Tensor csd_lookup_hit_ct,
+    at::Tensor csd_forced_accept_ct,
+    at::Tensor csd_delta_pair_ct,
+    int64_t csd_table_capacity,
+    int64_t csd_table_max_probe,
+    int64_t csd_delta_capacity,
+    bool csd_enabled,
+    bool csd_dynamic_update,
+    bool csd_dynamic_update_ignore_prob_ratio,
+    bool csd_force_accept_disabled,
+    double csd_logit_margin) {
   CHECK_INPUT(candidates);
   CHECK_INPUT(retrive_index);
   CHECK_INPUT(retrive_next_token);
   CHECK_INPUT(retrive_next_sibling);
   CHECK_INPUT(target_predict);
+  CHECK_INPUT(target_logits);
+  CHECK_INPUT(csd_table_keys);
+  CHECK_INPUT(csd_delta_pairs);
+  CHECK_INPUT(csd_delta_counter);
+  CHECK_INPUT(csd_lookup_hit_ct);
+  CHECK_INPUT(csd_forced_accept_ct);
+  CHECK_INPUT(csd_delta_pair_ct);
   auto device = target_predict.device();
   CHECK_EQ(candidates.device(), device);
   CHECK_EQ(retrive_index.device(), device);
   CHECK_EQ(retrive_next_token.device(), device);
   CHECK_EQ(retrive_next_sibling.device(), device);
   CHECK_EQ(target_predict.device(), device);
+  CHECK_EQ(target_logits.device(), device);
+  CHECK_EQ(csd_table_keys.device(), device);
+  CHECK_EQ(csd_delta_pairs.device(), device);
+  CHECK_EQ(csd_delta_counter.device(), device);
+  CHECK_EQ(csd_lookup_hit_ct.device(), device);
+  CHECK_EQ(csd_forced_accept_ct.device(), device);
+  CHECK_EQ(csd_delta_pair_ct.device(), device);
   CHECK_DIM(1, predicts);
   CHECK_DIM(2, accept_index);
   CHECK_DIM(1, accept_token_num);
@@ -348,19 +478,29 @@ void verify_tree_greedy(
   CHECK_DIM(2, retrive_next_token);
   CHECK_DIM(2, retrive_next_sibling);
   CHECK_DIM(2, target_predict);
+  CHECK_DIM(3, target_logits);
+  CHECK_DIM(1, csd_table_keys);
+  CHECK_DIM(1, csd_delta_pairs);
+  CHECK_DIM(1, csd_delta_counter);
+  CHECK_DIM(1, csd_lookup_hit_ct);
+  CHECK_DIM(1, csd_forced_accept_ct);
+  CHECK_DIM(1, csd_delta_pair_ct);
   unsigned int batch_size = candidates.size(0);
   unsigned int num_spec_step = accept_index.size(1);
   unsigned int num_draft_tokens = candidates.size(1);
+  unsigned int vocab_size = target_logits.size(2);
   CHECK_EQ(batch_size, accept_index.size(0));
   CHECK_EQ(batch_size, accept_token_num.size(0));
   CHECK_EQ(batch_size, retrive_index.size(0));
   CHECK_EQ(batch_size, retrive_next_token.size(0));
   CHECK_EQ(batch_size, retrive_next_sibling.size(0));
   CHECK_EQ(batch_size, target_predict.size(0));
+  CHECK_EQ(batch_size, target_logits.size(0));
   CHECK_EQ(num_draft_tokens, retrive_index.size(1));
   CHECK_EQ(num_draft_tokens, retrive_next_token.size(1));
   CHECK_EQ(num_draft_tokens, retrive_next_sibling.size(1));
   CHECK_EQ(num_draft_tokens, target_predict.size(1));
+  CHECK_EQ(num_draft_tokens, target_logits.size(1));
   CHECK_EQ(batch_size, accept_index.size(0));
   CHECK_EQ(batch_size, accept_token_num.size(0));
   if (predicts.scalar_type() != at::kInt) {
@@ -387,12 +527,33 @@ void verify_tree_greedy(
   if (target_predict.scalar_type() != at::kLong) {
     throw std::runtime_error("Expected 'target_predict' to be of type long (torch.int64).");
   }
+  if (target_logits.scalar_type() != at::kFloat) {
+    throw std::runtime_error("Expected 'target_logits' to be of type float (torch.float32).");
+  }
+  if (csd_table_keys.scalar_type() != at::kLong) {
+    throw std::runtime_error("Expected 'csd_table_keys' to be of type long (torch.int64).");
+  }
+  if (csd_delta_pairs.scalar_type() != at::kLong) {
+    throw std::runtime_error("Expected 'csd_delta_pairs' to be of type long (torch.int64).");
+  }
+  if (csd_delta_counter.scalar_type() != at::kInt) {
+    throw std::runtime_error("Expected 'csd_delta_counter' to be of type int (torch.int32).");
+  }
+  if (csd_lookup_hit_ct.scalar_type() != at::kLong) {
+    throw std::runtime_error("Expected 'csd_lookup_hit_ct' to be of type long (torch.int64).");
+  }
+  if (csd_forced_accept_ct.scalar_type() != at::kLong) {
+    throw std::runtime_error("Expected 'csd_forced_accept_ct' to be of type long (torch.int64).");
+  }
+  if (csd_delta_pair_ct.scalar_type() != at::kLong) {
+    throw std::runtime_error("Expected 'csd_delta_pair_ct' to be of type long (torch.int64).");
+  }
 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   dim3 grid(batch_size);
   dim3 block(1);
 
-  VerifyTreeGreedy<int32_t, int64_t><<<grid, block, 0, stream>>>(
+  VerifyTreeGreedy<float, int32_t, int64_t><<<grid, block, 0, stream>>>(
       static_cast<int32_t*>(predicts.data_ptr()),
       static_cast<int32_t*>(accept_index.data_ptr()),
       static_cast<int32_t*>(accept_token_num.data_ptr()),
@@ -401,7 +562,23 @@ void verify_tree_greedy(
       static_cast<int64_t*>(retrive_next_token.data_ptr()),
       static_cast<int64_t*>(retrive_next_sibling.data_ptr()),
       static_cast<int64_t*>(target_predict.data_ptr()),
+      static_cast<float*>(target_logits.data_ptr()),
       batch_size,
       num_spec_step,
-      num_draft_tokens);
+      num_draft_tokens,
+      vocab_size,
+      static_cast<int64_t*>(csd_table_keys.data_ptr()),
+      static_cast<int64_t*>(csd_delta_pairs.data_ptr()),
+      static_cast<int32_t*>(csd_delta_counter.data_ptr()),
+      static_cast<int64_t*>(csd_lookup_hit_ct.data_ptr()),
+      static_cast<int64_t*>(csd_forced_accept_ct.data_ptr()),
+      static_cast<int64_t*>(csd_delta_pair_ct.data_ptr()),
+      static_cast<uint32_t>(csd_table_capacity),
+      static_cast<uint32_t>(csd_table_max_probe),
+      static_cast<uint32_t>(csd_delta_capacity),
+      csd_enabled,
+      csd_dynamic_update,
+      csd_dynamic_update_ignore_prob_ratio,
+      csd_force_accept_disabled,
+      static_cast<float>(csd_logit_margin));
 }
