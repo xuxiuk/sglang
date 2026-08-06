@@ -21,6 +21,7 @@ from sglang.srt.speculative.dspark_components.dspark_info import (
     DraftProposal,
     VerifyWindow,
 )
+from sglang.srt.speculative.dspark_components.dspark_tp import DsparkTpSync
 from sglang.srt.speculative.spec_info import SpeculativeAlgorithm
 from sglang.srt.speculative.spec_utils import draft_tp_context
 
@@ -34,6 +35,7 @@ class DraftBlockProposer:
         gamma: int,
         mask_token_id: int,
         draft_block_spec_info,
+        tp_sync: DsparkTpSync,
         dp_moe_sync: bool = False,
     ) -> None:
         self.draft_model = draft_model
@@ -41,6 +43,7 @@ class DraftBlockProposer:
         self.gamma = gamma
         self._mask_token_id = mask_token_id
         self._draft_block_spec_info = draft_block_spec_info
+        self._tp_sync = tp_sync
         self._draft_sampler = None
         self._dp_moe_sync = dp_moe_sync
 
@@ -112,6 +115,7 @@ class DraftBlockProposer:
                 sampling_info=sampling_info,
                 markov_head=self.draft_model.markov_head,
                 device=device,
+                tp_sync=self._tp_sync,
             )
         return DraftProposal(
             draft_block_ids=draft_block_ids,
