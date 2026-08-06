@@ -208,6 +208,7 @@ class CompressorPrefillPlan(NamedTuple):
         ring_size: int,
         num_q_tokens: int,
         use_cuda_graph: bool = False,
+        verify_width: int = 0,
     ) -> CompressorPrefillPlan:
         is_gpu_input = seq_lens.device.type == "cuda"
         pin_buffer = torch.empty(
@@ -227,6 +228,7 @@ class CompressorPrefillPlan(NamedTuple):
             int(compress_ratio),
             int(swa_page_size),
             int(ring_size),
+            int(verify_width),
             bool(use_cuda_graph),
         )
         return CompressorPrefillPlan(
