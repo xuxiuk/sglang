@@ -1534,26 +1534,8 @@ class DeepseekV4DecoderLayer(nn.Module):
             self.hc_sinkhorn_iters,
             self.hc_eps,
         )
-        # y is the post-norm activation fed into the MoE. Allocate it in the
-        # symmetric memory pool so the downstream all-reduce uses the low-latency
-        # NCCL symmetric path: the Triton inplace MoE runner writes the expert
-        # output back into this buffer, so a symmetric input yields a symmetric
-        # all-reduce input. Gated by is_allocation_symmetric() (mirrors the
-        # TileLang path in _mhc_pre_impl / mhc_fused_post_pre).
-        # Compute the combine on the default allocator: the reduction's large
-        # intermediate ([m, hc_mult, k // hc_mult] product) must not allocate
-        # inside the NCCL symmetric pool, where transient allocations can
-        # alias in-flight symmetric all-reduce buffers and corrupt committed
-        # tokens (intermittent, batch-shape dependent; see #33800). Only the
-        # final y enters the pool, so the downstream all-reduce still sees a
-        # symmetric input.
-        y_tmp = (pre.squeeze(1).unsqueeze(-1) * x_flat.view(shape)).sum(dim=1).to(dtype)
-        with use_symmetric_memory(
-            get_tp_group(), disabled=not is_allocation_symmetric()
-        ):
-            y = torch.empty_like(y_tmp)
-        y.copy_(y_tmp)
-        return y, post.squeeze(1), comb.squeeze(1), False
+        y = (pre.squeeze(1).unsqueeze(-1) * x_flat.view(shape)).sum(dim=1)
+        return y.to(dtype), post.squeeze(1), comb.squeeze(1), False
 
     def hc_post(
         self,
