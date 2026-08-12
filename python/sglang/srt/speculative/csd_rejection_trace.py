@@ -228,6 +228,7 @@ class CSDRejectionTraceWriter:
             else top_values[:, 0]
         )
         draft_logits = selected_logits.gather(1, draft_tokens[:, None]).squeeze(1)
+        residual_logits = selected_logits.gather(1, residual_tokens[:, None]).squeeze(1)
         max_logits = selected_logits.max(dim=1).values
 
         # Only compact O(batch) tensors cross the device boundary.  Copying the
@@ -242,6 +243,9 @@ class CSDRejectionTraceWriter:
         entropy_cpu = entropy.cpu().tolist()
         top1_probs_cpu = top1_probs.cpu().tolist()
         margins_cpu = top1_top2_margins.cpu().tolist()
+        draft_logits_cpu = draft_logits.cpu().tolist()
+        residual_logits_cpu = residual_logits.cpu().tolist()
+        max_logits_cpu = max_logits.cpu().tolist()
         logit_pass_cpu = (
             (draft_logits >= max_logits + math.log(prob_ratio)).cpu().tolist()
         )
@@ -300,7 +304,15 @@ class CSDRejectionTraceWriter:
                         draft_prob / residual_prob if residual_prob > 0 else None
                     ),
                     "target_top1_probability": float(top1_probs_cpu[event_index]),
+                    "draft_top1_probability_ratio": (
+                        draft_prob / float(top1_probs_cpu[event_index])
+                        if float(top1_probs_cpu[event_index]) > 0
+                        else None
+                    ),
                     "target_top1_top2_margin": float(margins_cpu[event_index]),
+                    "draft_target_logit": float(draft_logits_cpu[event_index]),
+                    "residual_target_logit": float(residual_logits_cpu[event_index]),
+                    "max_target_logit": float(max_logits_cpu[event_index]),
                     "entropy_raw": event_entropy,
                     "entropy_norm_vocab": event_entropy / math.log(vocab_size),
                     "effective_support_size": math.exp(event_entropy),

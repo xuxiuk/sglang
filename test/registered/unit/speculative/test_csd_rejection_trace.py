@@ -67,6 +67,14 @@ class TestCSDRejectionTrace(unittest.TestCase):
             self.assertEqual(event["draft_token_id"], 2)
             self.assertEqual(event["residual_token_id"], 3)
             self.assertTrue(event["table_hit"])
+            self.assertAlmostEqual(
+                event["draft_top1_probability_ratio"], 0.30 / 0.40, places=6
+            )
+            self.assertAlmostEqual(event["draft_target_logit"], float(logits[0, 1, 2]))
+            self.assertAlmostEqual(
+                event["residual_target_logit"], float(logits[0, 1, 3])
+            )
+            self.assertAlmostEqual(event["max_target_logit"], float(logits[0, 1, 3]))
             self.assertEqual(writer.snapshot()["csd_trace_dropped_ct"], 0)
 
     def test_capacity_counts_events_not_batches(self):

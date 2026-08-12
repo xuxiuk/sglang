@@ -40,9 +40,10 @@ events.rank<R>.jsonl
 context = prompt_token_ids + generated_token_ids[:generated_position]
 ```
 
-`events`保存 draft/residual token、target probability、原始熵、词表归一化熵、
-`exp(H)`有效支持规模、top-1/top-2 margin、table frequency/hit、ratio gate、entropy
-gate 和关闭强制接受时的`would_force_accept`。
+`events`保存 draft/residual token、二者的 target probability、draft/residual probability
+ratio、draft/top-1 probability ratio、draft/residual/max target logit、原始熵、词表归一化
+熵、`exp(H)`有效支持规模、top-1/top-2 margin、table frequency/hit、ratio gate、
+entropy gate 和关闭强制接受时的`would_force_accept`。
 
 采样请求的熵基于 temperature、top-k、top-p 后的 target distribution；greedy 请求的
 熵基于 penalty/grammar 处理后、过滤前的完整 target softmax。每条事件通过
