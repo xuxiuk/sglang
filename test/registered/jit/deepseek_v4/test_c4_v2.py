@@ -7,7 +7,7 @@ import pytest
 import torch
 import triton
 
-from sglang.jit_kernel.dsv4 import compress_forward
+from sglang.jit_kernel.dsv4 import CompressorPrefillPlan, compress_forward
 from sglang.jit_kernel.tests.deepseek_v4.common import (
     LegacyContext,
     PagedContext,
@@ -120,6 +120,43 @@ def _make_inputs(
 # -----------------------------------------------------------------------------
 # Tests
 # -----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("planner_on_device", [False, True], ids=["cpu", "gpu"])
+@pytest.mark.parametrize("verify_width", [2, 4, 5, 6, 8, 12])
+def test_paged_prefill_dspark_rewrites_full_verify_window(
+    planner_on_device: bool,
+    verify_width: int,
+) -> None:
+    """Every DSpark verifier row must be present in the state write plan."""
+    ctx = make_paged_context(bs=1, compress_ratio=RATIO, ring_size=16)
+    seq_lens = torch.tensor([100], dtype=torch.int64)
+    extend_lens = torch.tensor([verify_width], dtype=torch.int64)
+    if planner_on_device:
+        seq_lens = seq_lens.cuda()
+        extend_lens = extend_lens.cuda()
+
+    plan = CompressorPrefillPlan.generate(
+        compress_ratio=RATIO,
+        req_pool_indices=ctx.req_pool_indices,
+        seq_lens=seq_lens,
+        extend_lens=extend_lens,
+        req_to_token=ctx.req_to_token,
+        full_to_swa=ctx.full_to_swa,
+        swa_page_size=ctx.swa_page_size,
+        ring_size=ctx.ring_size,
+        num_q_tokens=verify_width,
+        verify_width=verify_width,
+    )
+
+    packed_ragged_ids = plan.plan_w.view(torch.int32)[:, 0]
+    ragged_ids = (packed_ragged_ids & 0xFFFF).cpu()
+    torch.testing.assert_close(
+        ragged_ids,
+        torch.arange(verify_width, dtype=torch.int32),
+        rtol=0,
+        atol=0,
+    )
 
 
 @pytest.mark.parametrize("mode", ["legacy", "paged"])

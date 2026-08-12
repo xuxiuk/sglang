@@ -6,6 +6,7 @@ from sglang.srt.environ import envs
 from sglang.srt.speculative.dflash_info_v2 import DFlashDraftInputV2
 from sglang.srt.speculative.draft_worker_common import make_draft_input_v2
 from sglang.srt.speculative.dspark_components.dspark_info import DraftBlockResult
+from sglang.srt.speculative.dspark_components.dspark_tp import DsparkTpSync
 from sglang.srt.speculative.dspark_components.kernels.sample_step_tokens import (
     SampleStepTokens,
 )
@@ -18,7 +19,9 @@ def greedy_step_sampler(step_logits: torch.Tensor, step_idx: int) -> torch.Tenso
 
 class DsparkDraftSampler:
 
-    def __init__(self, *, model, gamma, max_bs, device, confidence_fn=None, out=None):
+    def __init__(
+        self, *, model, gamma, max_bs, device, tp_sync, confidence_fn=None, out=None
+    ):
         self.model = model
         self.markov_head = model.markov_head
         self.gamma = int(gamma)
@@ -30,6 +33,7 @@ class DsparkDraftSampler:
                 (int(max_bs) * self.gamma,), dtype=torch.int64, device=device
             )
         self.confidence_fn = confidence_fn
+        self._tp_sync = tp_sync
         self.confidence_out = (
             torch.empty((int(max_bs), self.gamma), dtype=torch.float32, device=device)
             if confidence_fn is not None
@@ -45,7 +49,9 @@ class DsparkDraftSampler:
             base_logits,
             first_prev_tokens=anchor,
             hidden_states=hidden_states.view(bs, self.gamma, -1),
-            sampler=greedy_step_sampler,
+            sampler=lambda logits, step: self._tp_sync.sync(
+                greedy_step_sampler(logits, step)
+            ),
         )
         self.out[: draft_tokens.numel()].copy_(draft_tokens.reshape(-1))
         if self.confidence_out is not None:
@@ -85,6 +91,7 @@ def sample_draft_block(
     sampling_info,
     markov_head,
     device: torch.device,
+    tp_sync: DsparkTpSync,
 ) -> DraftBlockResult:
     bs = base_logits.shape[0]
     greedy_mask = resolve_greedy_mask(bs=bs, sampling_info=sampling_info, device=device)
@@ -101,7 +108,7 @@ def sample_draft_block(
     if not any_sampling:
 
         def sampler(step_logits: torch.Tensor, step_idx: int) -> torch.Tensor:
-            return torch.argmax(step_logits, dim=-1)
+            return tp_sync.sync(torch.argmax(step_logits, dim=-1))
 
     else:
 
@@ -110,11 +117,13 @@ def sample_draft_block(
                 exp_noise = torch.empty(
                     step_logits.shape, dtype=torch.float32, device=step_logits.device
                 ).exponential_(1)
-                return SampleStepTokens.execute(
-                    step_logits=step_logits,
-                    temperatures=temperatures,
-                    greedy_mask=greedy_mask,
-                    exp_noise=exp_noise,
+                return tp_sync.sync(
+                    SampleStepTokens.execute(
+                        step_logits=step_logits,
+                        temperatures=temperatures,
+                        greedy_mask=greedy_mask,
+                        exp_noise=exp_noise,
+                    )
                 )
             else:
                 probs = torch.softmax(
@@ -122,7 +131,9 @@ def sample_draft_block(
                 )
                 argmax_tokens = torch.argmax(step_logits, dim=-1)
                 sampled_tokens = torch.multinomial(probs, num_samples=1).squeeze(-1)
-                return torch.where(greedy_mask, argmax_tokens, sampled_tokens)
+                return tp_sync.sync(
+                    torch.where(greedy_mask, argmax_tokens, sampled_tokens)
+                )
 
     draft_tokens, corrected_logits = markov_head.sample_block(
         base_logits,

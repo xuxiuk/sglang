@@ -9,6 +9,7 @@ from sglang.srt.model_executor.forward_batch_info import (
     CaptureHiddenMode,
     ForwardBatch,
     ForwardMode,
+    enable_num_token_non_padded,
 )
 from sglang.srt.speculative.dflash_info_v2 import DFlashDraftInputV2
 from sglang.srt.speculative.dspark_components.dspark_draft import (
@@ -21,6 +22,7 @@ from sglang.srt.speculative.dspark_components.dspark_info import (
     DraftProposal,
     VerifyWindow,
 )
+from sglang.srt.speculative.dspark_components.dspark_tp import DsparkTpSync
 from sglang.srt.speculative.spec_info import SpeculativeAlgorithm
 from sglang.srt.speculative.spec_utils import draft_tp_context
 
@@ -34,6 +36,7 @@ class DraftBlockProposer:
         gamma: int,
         mask_token_id: int,
         draft_block_spec_info,
+        tp_sync: DsparkTpSync,
         dp_moe_sync: bool = False,
     ) -> None:
         self.draft_model = draft_model
@@ -41,6 +44,7 @@ class DraftBlockProposer:
         self.gamma = gamma
         self._mask_token_id = mask_token_id
         self._draft_block_spec_info = draft_block_spec_info
+        self._tp_sync = tp_sync
         self._draft_sampler = None
         self._dp_moe_sync = dp_moe_sync
 
@@ -112,6 +116,7 @@ class DraftBlockProposer:
                 sampling_info=sampling_info,
                 markov_head=self.draft_model.markov_head,
                 device=device,
+                tp_sync=self._tp_sync,
             )
         return DraftProposal(
             draft_block_ids=draft_block_ids,
@@ -221,6 +226,13 @@ class DraftBlockProposer:
             self._draft_block_spec_info.get_spec_adjusted_global_num_tokens(batch)
         )
         device = self.draft_model_runner.device
+        forward_batch.original_global_num_tokens_cpu = batch.global_num_tokens
+        num_tokens = forward_batch.input_ids.numel()
+        if enable_num_token_non_padded():
+            forward_batch.num_token_non_padded = torch.tensor(
+                num_tokens, dtype=torch.int32, device=device
+            )
+        forward_batch.num_token_non_padded_cpu = num_tokens
         forward_batch.global_num_tokens_cpu = gnt
         forward_batch.global_num_tokens_for_logprob_cpu = gnt_logprob
         forward_batch.global_num_tokens_gpu = torch.tensor(gnt, dtype=torch.int64).to(
