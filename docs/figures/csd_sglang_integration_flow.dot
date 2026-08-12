@@ -1,0 +1,51 @@
+digraph CSDIntegration {
+  graph [rankdir=TB, bgcolor="white", pad="0.25", nodesep="0.38", ranksep="0.52", fontname="Noto Sans CJK SC", newrank=true];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans CJK SC", fontsize=14, color="#CBD5E1", penwidth=1.4, margin="0.16,0.10"];
+  edge [fontname="Noto Sans CJK SC", fontsize=11, color="#64748B", penwidth=1.5, arrowsize=0.8];
+
+  subgraph cluster_proposal {
+    label="① Draft proposal（保持后端原生逻辑）";
+    fontsize=14; fontname="Noto Sans CJK SC"; color="#BFDBFE"; style="rounded,filled"; fillcolor="#EFF6FF";
+    mtp [label="MTP / EAGLE\n树形候选", fillcolor="#DBEAFE", color="#60A5FA"];
+    dflash [label="DFlash\n线性候选", fillcolor="#DBEAFE", color="#60A5FA"];
+    dspark [label="DSpark\n压缩后的线性候选", fillcolor="#DBEAFE", color="#60A5FA"];
+    { rank=same; mtp; dflash; dspark; }
+  }
+
+  target [label="② Target model 一次前向\n输出验证 logits / probabilities", fillcolor="#E0E7FF", color="#818CF8"];
+  verify [label="③ 原生 speculative verifier\nGreedy 或 Sampling", fillcolor="#F1F5F9", color="#94A3B8"];
+  normal [shape=diamond, label="正常接受？", fillcolor="#F8FAFC", color="#94A3B8", margin="0.12"];
+
+  subgraph cluster_csd {
+    label="④ CSD rescue（只处理正常拒绝）";
+    fontsize=14; fontname="Noto Sans CJK SC"; color="#FBBF24"; style="rounded,filled"; fillcolor="#FFFBEB";
+    pair [label="构造 rejected pair\nGreedy: (draft, target top-1)\nSampling: (draft, residual)", fillcolor="#FEF3C7", color="#F59E0B"];
+    gates [label="GPU 融合判断\nHash lookup → Ratio gate\n→ Entropy gate（sampling）", fillcolor="#FEF3C7", color="#F59E0B"];
+    rescue [shape=diamond, label="全部通过？", fillcolor="#FFFBEB", color="#F59E0B", margin="0.12"];
+  }
+
+  accept [label="接受 draft token\n继续验证后续候选", fillcolor="#DCFCE7", color="#22C55E"];
+  reject [label="保持原始拒绝\n输出 residual / target token", fillcolor="#FEE2E2", color="#EF4444"];
+
+  delta [label="GPU delta buffer\n记录新观察 pair", fillcolor="#F3E8FF", color="#A855F7"];
+  aggregate [label="DP 聚合 + CPU 异步 rebuild\nfrequency threshold 过滤", fillcolor="#F3E8FF", color="#A855F7"];
+  table [label="GPU active hash table\n只保存 pair key", fillcolor="#F3E8FF", color="#A855F7"];
+
+  { rank=same; verify; normal; }
+  { rank=same; pair; gates; rescue; }
+  { rank=same; accept; reject; }
+  { rank=same; delta; aggregate; table; }
+
+  mtp -> target; dflash -> target; dspark -> target;
+  target -> verify -> normal;
+  normal -> accept [label="是", color="#16A34A"];
+  normal -> pair [label="否", color="#D97706"];
+  pair -> gates -> rescue;
+  rescue -> accept [label="Force accept", color="#16A34A"];
+  rescue -> reject [label="未通过", color="#DC2626"];
+
+  pair -> delta [label="dynamic collect", style=dashed, color="#9333EA"];
+  delta -> aggregate [style=dashed, color="#9333EA"];
+  aggregate -> table [style=dashed, color="#9333EA"];
+  table -> gates [label="lookup", style=dashed, color="#9333EA"];
+}
