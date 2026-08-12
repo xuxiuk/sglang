@@ -374,7 +374,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python -m sglang.launch_server \
 本轮两组 GPU 的完整测试入口是：
 
 ```text
-runs/mtp_csd/qwen35_accuracy_avg_314_c48_20260802/run_two_gpu_groups.sh
+runs/mtp_csd/qwen35b_mtp314_final/run_all.sh
 ```
 
 ## 6. DFlash 接入
@@ -528,9 +528,10 @@ stackexchange
 wikipedia
 ```
 
-每个域取 1000 条 prompt，共 6000 条。默认生成参数为
-`temperature=1.0`、`top_p=1.0`、`max_new_tokens=1024`。当前脚本中 DFlash
-使用 48 个并发请求，DSpark 使用 8 个并发请求；
+每个域取 1000 条 prompt，共 6000 条。所有正式table都使用`temperature=1.0`和
+`top_p=1.0`，但历史采集长度并不完全相同：Qwen3.5-35B和397B的现存MTP table使用
+`max_new_tokens=512`、并发8；DSpark和DeepSeek-V4 MTP的正式校准使用
+`max_new_tokens=1024`。DFlash脚本使用48个并发请求，DSpark通用脚本使用8个并发请求；
 并发数只影响校准耗时，不改变语料组成。校准文件虽然包含历史 completion，但
 `scripts/calibrate_dspark_csd.py` 只读取其中的 `domain` 和 `prompt`，由当前服务重新生成
 completion 并采集 pair。
@@ -560,6 +561,12 @@ draft model/后端、MTP steps/topk/draft tokens、DFlash block size、DSpark SP
 --speculative-csd-rebuild-threshold 4096
 ```
 
+上面的`freq-threshold=6`是正式评测加载table时使用的活动表准入阈值。两个Qwen table的
+metadata中记录的`freq_threshold=3`表示：当时运行calibration服务时，服务用阈值3构建
+运行期GPU活动表。该值不是采集过滤条件，也不是JSON导出过滤条件；导出的JSON仍包含
+频次1、2以及更高频次的完整CPU pair-frequency store。正式评测服务读取同一JSON后，
+根据当前命令行参数重新筛选`frequency >= 6`的pair并构建GPU活动表。
+
 导出示例：
 
 ```bash
@@ -579,7 +586,8 @@ DSpark 的通用 calibration 流程保存在 `scripts/run_dspark_csd.sh`。DP=4 
 
 | Target model / 后端 | Draft 配置 | Calibration 脚本 | 正式或现存 table | 状态与用途 |
 | --- | --- | --- | --- | --- |
-| Qwen3.5-35B-A3B / MTP | EAGLE 3-1-4 | `runs/mtp_csd/qwen35_accuracy_avg_314_c48_20260802/calibration/run_qwen35_mtp314_calibration.sh` | `runs/mtp_csd/qwen35_accuracy_avg_314_c48_20260802/calibration/csd_table_redpajama_logits_ungated_6domains_n1000_Qwen3.5-35B-A3B_mtp_EAGLE_steps3_topk1_draft3_temp1.0_ratio0.01.json` | 已用于当前 Qwen 正式评测；历史文件名和 CLI metadata 中的 `draft3` 表示 3 个 draft token，计入 verifier root 后对应报告中的 4-token 有效宽度，因此统一记作 3-1-4 |
+| Qwen3.5-35B-A3B / MTP | EAGLE 3-1-4 | `runs/mtp_csd/qwen35b_mtp314_final/calibration/run_qwen35_mtp314_calibration.sh` | `runs/mtp_csd/qwen35b_mtp314_final/calibration/csd_table_redpajama_logits_ungated_6domains_n1000_Qwen3.5-35B-A3B_mtp_EAGLE_steps3_topk1_draft3_temp1.0_ratio0.01.json` | 已用于当前 Qwen 正式评测；历史文件名和 CLI metadata 中的 `draft3` 表示 3 个 draft token，计入 verifier root 后对应报告中的 4-token 有效宽度，因此统一记作 3-1-4 |
+| Qwen3.5-397B-A17B-FP8 / MTP | EAGLE 3-1-4 | 复用上一行脚本并显式覆盖`MODEL`、`TABLE`与输出目录 | `runs/mtp_csd/qwen397b_mtp314_final/calibration/csd_table_redpajama_logits_ungated_6domains_n1000_Qwen3.5-397B-A17B-FP8_mtp_EAGLE_steps3_topk1_draft3_temp1.0_ratio0.01.json` | 6000 prompts、512 max-new-tokens、并发8；正式加载阈值6 |
 | DeepSeek-V4-Flash-DSpark / DSpark | compact DSpark，SPS table，DP=4 | `scripts/run_dspark_csd.sh` | `runs/dspark_csd/formal_redpajama_20260724/tables/dspark_csd_merged.json` | 已完成；四个 DP shard 合并后的正式 DSpark table |
 | DeepSeek-V4-Flash / MTP | EAGLE 3-1-4，DeepSeek-V4-Flash-MTP-Draft，DP=4 | `runs/dspark_csd/v4_mtp314_calibration_dp4_20260802/run_full_calibration.sh` | `runs/dspark_csd/v4_mtp314_calibration_dp4_20260802/tables/v4_mtp314_redpajama_merged.json` | 已完成；6000 prompts，四 shard 频次守恒校验通过 |
 
@@ -632,103 +640,77 @@ curl -fsS http://127.0.0.1:<port>/server_info | python -m json.tool
 
 ### 9.1 正式结果脚本索引
 
-正式结果必须从下面列出的入口生成；calibration 脚本和只验证服务能否启动的短请求不属于
-正式结果脚本。
-
 | 模型 / 后端 | 正式任务 | 正式结果脚本 | 主要输出 |
 | --- | --- | --- | --- |
-| Qwen3.5-35B-A3B / MTP | AIME 2025、Math500、LiveCodeBench v6、GSM8K | `runs/mtp_csd/qwen35_accuracy_avg_314_c48_20260802/run_two_gpu_groups.sh` | `runs/mtp_csd/qwen35_accuracy_avg_314_c48_20260802/{gpu0_3,gpu4_7,gsm8k_avg_gpu0_3}/` |
-| Qwen3.5-35B-A3B / MTP | APPS、TACO，各题 n=4 | `runs/mtp_csd/qwen35_accuracy_avg_314_c48_20260802/run_apps_taco_n4.sh` | `runs/mtp_csd/qwen35_accuracy_avg_314_c48_20260802/code_ood_n4/` |
-| DeepSeek-V4-Flash-DSpark / DSpark | AIME 2025 | `scripts/run_dspark_accuracy81920_matrix.sh` | `runs/dspark_csd/accuracy81920_official_r1_retry_20260725/` |
-| DeepSeek-V4-Flash-DSpark / DSpark | LiveCodeBench v6，128K，逐请求 trace | `scripts/run_dspark_lcb128k_trace_matrix.sh` | `runs/dspark_csd/lcb128k_trace_matrix_20260726_1900/` |
+| Qwen3.5-35B-A3B / MTP | AIME 2025、Math500、LiveCodeBench v6、GSM8K | `runs/mtp_csd/qwen35b_mtp314_final/run_all.sh` | `runs/mtp_csd/qwen35b_mtp314_final/results/{aime25_avg16,math500_avg4,lcb_avg4,gsm8k_avg4}/` |
+| Qwen3.5-35B-A3B / MTP | APPS、TACO，各题 n=4 | `runs/mtp_csd/qwen35b_mtp314_final/run_apps_taco_n4.sh` | `runs/mtp_csd/qwen35b_mtp314_final/results/{apps,taco}/` |
+| Qwen3.5-397B-A17B-FP8 / MTP | AIME 2025、Math500、LiveCodeBench v6、GSM8K | `runs/mtp_csd/qwen397b_mtp314_final/run_all.sh` | `runs/mtp_csd/qwen397b_mtp314_final/results/` |
+| DeepSeek-V4-Flash-DSpark / DSpark | LCB avg@4、AIME avg@16、Math500 avg@4、GSM8K avg@4，static四方法 | `runs/dspark_csd/final_results/run_all.sh` | `runs/dspark_csd/final_results/<method>/<task>/` |
 
-新完成的 DeepSeek-V4 MTP 3-1-4 calibration 尚未运行正式任务矩阵，因此本表不为它
-填写“最终结果脚本”。DFlash 不属于本次中期结果资产索引。
+### 9.2 Qwen3.5-35B MTP
 
-### 9.2 MTP
-
-MTP 正式评测使用 Qwen3.5-35B-A3B，投机形状为 `steps=3、topk=1、draft_tokens=4`，
-`max_running_requests=48`。生成配置为 `temperature=1.0`、`top_p=0.95`、`top_k=20`、
-`min_p=0`、`presence_penalty=1.5`、`repetition_penalty=1.0`，开启 thinking，最大生成
-长度 81920，模型长度 96000。比较的方法包括 Auto、bare MTP、plain、dynamic 和
-dynamic + entropy gate。
-
-主评测任务和重复次数为：
+配置：`steps=3`、`topk=1`、`draft_tokens=4`、`max_running_requests=48`、
+`temperature=1.0`、`top_p=0.95`、`top_k=20`、`presence_penalty=1.5`、thinking、
+`max_new_tokens=81920`、`model_length=96000`。
 
 | 任务 | 报告指标 |
 | --- | --- |
 | AIME 2025 | avg@16、pass@16 |
 | Math500 | avg@4、pass@4 |
-| LiveCodeBench v6 | 四次生成的 pass@1 average、pass@4 |
+| LiveCodeBench v6 | avg@4、pass@4 |
+| GSM8K | avg@4、pass@4 |
+| APPS、TACO | avg@4、pass@4 |
+
+```bash
+bash runs/mtp_csd/qwen35b_mtp314_final/run_all.sh all
+bash runs/mtp_csd/qwen35b_mtp314_final/run_apps_taco_n4.sh all
+```
+
+```text
+runs/mtp_csd/qwen35b_mtp314_final/results/
+```
+
+主任务目录包含`artifacts/`、`logs/`和`results/classic_tree_shape_sweep.jsonl`；
+APPS/TACO目录包含`answers/`、`accuracy/`和`logs/`。Math500 entropy使用p30阈值
+`1.3415851593017578`，其余entropy结果使用p20阈值`1.5638477802276611`。
+
+### 9.3 Qwen3.5-397B MTP
+
+```bash
+bash runs/mtp_csd/qwen397b_mtp314_final/run_all.sh all
+```
+
+| 任务 | 报告指标 | CSD probability ratio |
+| --- | --- | ---: |
+| AIME 2025 | avg@4、pass@4 | 0.3 |
+| Math500 | avg@4、pass@4 | 0.4 |
+| LiveCodeBench v6 | avg@4、pass@4 | 0.3 |
+| GSM8K | avg@4、pass@4 | 0.3 |
+
+输出目录：
+
+```text
+runs/mtp_csd/qwen397b_mtp314_final/results/{aime25_avg4,math500_avg4,lcb_avg4,gsm8k_avg4}/
+```
+
+### 9.4 DSpark
+
+配置：DeepSeek-V4-Flash-DSpark、TP=8、DP=8、static verify、bare/plain/dynamic/entropy
+四种方法、`prob-ratio=0.3`、entropy阈值`1.5638477802276611`。
+
+| 任务 | 报告指标 |
+| --- | --- |
+| AIME 2025 | avg@16、pass@16 |
+| Math500 | avg@4、pass@4 |
+| LiveCodeBench v6 | avg@4、pass@4 |
 | GSM8K | avg@4、pass@4 |
 
-主脚本位于：
-
-```text
-runs/mtp_csd/qwen35_accuracy_avg_314_c48_20260802/run_two_gpu_groups.sh
-```
-
-正式评测只需执行一个入口：
-
 ```bash
-bash runs/mtp_csd/qwen35_accuracy_avg_314_c48_20260802/run_two_gpu_groups.sh all
+bash runs/dspark_csd/final_results/run_all.sh
 ```
-
-脚本内部启动两条互不共享 GPU 和端口的队列：GPU 0-3 依次运行 LCB 全方法、Math500
-Auto 和 GSM8K 全方法；GPU 4-7 同时运行 AIME 全方法和其余 Math500 方法。两条队列内部
-顺序执行，队列之间并行，`all` 会等待两组任务全部完成后才退出。`group0`、`group1` 和
-`gsm8k_avg_gpu0_3` 子命令仅用于失败后的局部恢复，不作为正式复现入口。
-
-输出根目录为：
 
 ```text
-runs/mtp_csd/qwen35_accuracy_avg_314_c48_20260802/
+runs/dspark_csd/final_results/<method>/<task>/
 ```
 
-`gpu0_3/` 和 `gpu4_7/` 分别保存两组正式任务；`gsm8k_avg_gpu0_3/` 保存 GSM8K。
-各目录中的 `artifacts/*_lighteval_metrics.json` 保存精度摘要，
-`artifacts/*_lighteval_results.json` 保存评测结果，`logs/` 保存服务和客户端日志，
-`results/classic_tree_shape_sweep.jsonl` 汇总精度、吞吐、平均接受长度、投机成功率和
-CSD counters。
-
-### 9.3 DSpark
-
-DSpark 使用 DeepSeek-V4-Flash-DSpark，TP=4、DP Attention=4，比较 bare、plain、
-dynamic 和 dynamic + entropy gate。AIME 2025 的现有矩阵使用 `temperature=1.0`、
-`top_p=1.0`、thinking、并发 48、`max_running_requests=48`、最大生成长度 81920 和
-模型长度 96000：
-
-```text
-scripts/run_dspark_accuracy81920_matrix.sh
-```
-
-默认脚本同时包含 AIME 2025 和 LCB v6；只运行 AIME 可显式限制任务：
-
-```bash
-TASKS=aime bash scripts/run_dspark_accuracy81920_matrix.sh
-```
-
-脚本为每种方法创建独立目录，AIME 精度输出位于
-`<run_root>/<method>/aime25_r1/`，CSD metrics 位于 `<run_root>/<method>/logs/`，
-服务和评测日志位于 `<run_root>/driver_logs/`。仓库中已有的一轮完整输出位于：
-
-```text
-runs/dspark_csd/accuracy81920_official_r1_retry_20260725/
-```
-
-LCB v6 采用后续修正的 128K Think-High 配置，保持并发 48，同时记录逐请求 decode
-trace。入口为：
-
-```bash
-bash scripts/run_dspark_lcb128k_trace_matrix.sh
-```
-
-其已有输出位于：
-
-```text
-runs/dspark_csd/lcb128k_trace_matrix_20260726_1900/
-```
-
-每种方法的 `lcb_codegen_v6_r1/result.json` 保存精度，`request_timing.jsonl` 保存逐请求
-时间线，`request_timing.summary.json` 保存排除排队和 TTFT 后的 decode 吞吐汇总，
-`logs/csd_metrics_*.json` 保存 table hit、force accept、dynamic rebuild 等运行指标。
+每个任务目录包含`eval/result.json`、`eval/tracker/`和`metrics/task_metrics.json`。
