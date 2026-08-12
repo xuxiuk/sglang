@@ -283,3 +283,19 @@ test/registered/xpu/test_nvidia_nemotron_3_nano.py
 artifacts/
 .claude/scheduled_tasks.lock
 .humanize/
+# Local DSpark reproduction materials (not part of the CSD deliverable)
+/.litellm_cache/
+/ACL 2026_main-3437.pptx
+/DSPARK_BLOG_REPRODUCTION_CN.md
+/DSPARK_CSD_DEV_ENV_CN.md
+/DSPARK_FIGURE1_REPRODUCTION_CN.md
+
+# CSD evaluation outputs retained locally; commit compact summaries instead.
+/runs/**/server.pid
+/runs/**/server/
+/runs/**/request_timing.jsonl
+/runs/**/tracker/details/**/*.parquet
+/runs/mtp_csd/*/results/*/answers/*_model_outputs.json
+/runs/dspark_csd/*/tables/*_merged.json
+/runs/dspark_csd/v4_mtp314_calibration_dp4_20260802/STATUS
+/runs/dspark_csd/v4_mtp314_calibration_dp4_20260802/resume_after_kernel_build.sh

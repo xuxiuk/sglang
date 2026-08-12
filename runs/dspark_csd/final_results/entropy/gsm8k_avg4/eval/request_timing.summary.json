@@ -1,0 +1,26 @@
+{
+  "streaming": false,
+  "includes_server_scheduling_and_ttft": true,
+  "excludes_client_idle_outside_active_request_intervals": true,
+  "request_count": 5276,
+  "logical_problem_count": 1319,
+  "independent_sample_requests": true,
+  "timed_request_count": 5276,
+  "completion_tokens": 2651851,
+  "per_sample_completion_tokens": {
+    "mean": 502.62528430629266,
+    "p50": 262,
+    "p90": 797,
+    "p95": 1527,
+    "p99": 5550,
+    "max": 17630
+  },
+  "length_finish_count": 0,
+  "length_finish_rate": 0.0,
+  "evaluation_wall_sec": 1113.3994157277048,
+  "output_token_throughput": 2381.7607253429187,
+  "output_token_throughput_definition": "sum(completion_tokens) / pipeline.evaluate() elapsed; matches the existing MTP report convention",
+  "active_request_union_sec": 1102.4883132241666,
+  "active_request_union_output_tok_s": 2405.332526605028,
+  "active_request_union_output_definition": "sum(completion_tokens) / union(all non-streaming request wall intervals)"
+}

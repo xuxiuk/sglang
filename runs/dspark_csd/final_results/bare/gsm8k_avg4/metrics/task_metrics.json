@@ -1,0 +1,151 @@
+{
+  "dp_size": 8,
+  "speculative_num_draft_tokens": 6,
+  "spec_accept_tokens": 2666440,
+  "spec_verify_count": 669586,
+  "avg_spec_accept_length": 3.982221850516588,
+  "spec_num_correct_drafts": 1996854,
+  "spec_num_proposed_drafts": 3347930,
+  "spec_accept_rate": 0.5964443701033175,
+  "csd_counter_sums_across_dp": {
+    "csd_lookup_hit_ct": 0,
+    "csd_forced_accept_ct": 0,
+    "csd_delta_pair_ct": 0,
+    "csd_rebuild_started_ct": 0,
+    "csd_rebuild_applied_ct": 0,
+    "csd_rebuild_wall_sec": 0,
+    "csd_dp_aggregate_started_ct": 0,
+    "csd_dp_aggregate_pair_ct": 0
+  },
+  "csd_forced_accept_over_lookup_hit": null,
+  "per_dp": [
+    {
+      "dp_rank": 0,
+      "spec_accept_tokens": 343137,
+      "spec_verify_count": 86183,
+      "avg_spec_accept_length": 3.9814928698235152,
+      "csd_delta": {
+        "csd_lookup_hit_ct": 0,
+        "csd_forced_accept_ct": 0,
+        "csd_delta_pair_ct": 0,
+        "csd_rebuild_started_ct": 0,
+        "csd_rebuild_applied_ct": 0,
+        "csd_rebuild_wall_sec": 0,
+        "csd_dp_aggregate_started_ct": 0,
+        "csd_dp_aggregate_pair_ct": 0
+      }
+    },
+    {
+      "dp_rank": 1,
+      "spec_accept_tokens": 352954,
+      "spec_verify_count": 90272,
+      "avg_spec_accept_length": 3.909894540942928,
+      "csd_delta": {
+        "csd_lookup_hit_ct": 0,
+        "csd_forced_accept_ct": 0,
+        "csd_delta_pair_ct": 0,
+        "csd_rebuild_started_ct": 0,
+        "csd_rebuild_applied_ct": 0,
+        "csd_rebuild_wall_sec": 0,
+        "csd_dp_aggregate_started_ct": 0,
+        "csd_dp_aggregate_pair_ct": 0
+      }
+    },
+    {
+      "dp_rank": 2,
+      "spec_accept_tokens": 322618,
+      "spec_verify_count": 80183,
+      "avg_spec_accept_length": 4.02352119526583,
+      "csd_delta": {
+        "csd_lookup_hit_ct": 0,
+        "csd_forced_accept_ct": 0,
+        "csd_delta_pair_ct": 0,
+        "csd_rebuild_started_ct": 0,
+        "csd_rebuild_applied_ct": 0,
+        "csd_rebuild_wall_sec": 0,
+        "csd_dp_aggregate_started_ct": 0,
+        "csd_dp_aggregate_pair_ct": 0
+      }
+    },
+    {
+      "dp_rank": 3,
+      "spec_accept_tokens": 336417,
+      "spec_verify_count": 84677,
+      "avg_spec_accept_length": 3.972944246961985,
+      "csd_delta": {
+        "csd_lookup_hit_ct": 0,
+        "csd_forced_accept_ct": 0,
+        "csd_delta_pair_ct": 0,
+        "csd_rebuild_started_ct": 0,
+        "csd_rebuild_applied_ct": 0,
+        "csd_rebuild_wall_sec": 0,
+        "csd_dp_aggregate_started_ct": 0,
+        "csd_dp_aggregate_pair_ct": 0
+      }
+    },
+    {
+      "dp_rank": 4,
+      "spec_accept_tokens": 318928,
+      "spec_verify_count": 79110,
+      "avg_spec_accept_length": 4.031449879914044,
+      "csd_delta": {
+        "csd_lookup_hit_ct": 0,
+        "csd_forced_accept_ct": 0,
+        "csd_delta_pair_ct": 0,
+        "csd_rebuild_started_ct": 0,
+        "csd_rebuild_applied_ct": 0,
+        "csd_rebuild_wall_sec": 0,
+        "csd_dp_aggregate_started_ct": 0,
+        "csd_dp_aggregate_pair_ct": 0
+      }
+    },
+    {
+      "dp_rank": 5,
+      "spec_accept_tokens": 321131,
+      "spec_verify_count": 79504,
+      "avg_spec_accept_length": 4.039180418595291,
+      "csd_delta": {
+        "csd_lookup_hit_ct": 0,
+        "csd_forced_accept_ct": 0,
+        "csd_delta_pair_ct": 0,
+        "csd_rebuild_started_ct": 0,
+        "csd_rebuild_applied_ct": 0,
+        "csd_rebuild_wall_sec": 0,
+        "csd_dp_aggregate_started_ct": 0,
+        "csd_dp_aggregate_pair_ct": 0
+      }
+    },
+    {
+      "dp_rank": 6,
+      "spec_accept_tokens": 341705,
+      "spec_verify_count": 86888,
+      "avg_spec_accept_length": 3.932706472700488,
+      "csd_delta": {
+        "csd_lookup_hit_ct": 0,
+        "csd_forced_accept_ct": 0,
+        "csd_delta_pair_ct": 0,
+        "csd_rebuild_started_ct": 0,
+        "csd_rebuild_applied_ct": 0,
+        "csd_rebuild_wall_sec": 0,
+        "csd_dp_aggregate_started_ct": 0,
+        "csd_dp_aggregate_pair_ct": 0
+      }
+    },
+    {
+      "dp_rank": 7,
+      "spec_accept_tokens": 329550,
+      "spec_verify_count": 82769,
+      "avg_spec_accept_length": 3.9815631456221534,
+      "csd_delta": {
+        "csd_lookup_hit_ct": 0,
+        "csd_forced_accept_ct": 0,
+        "csd_delta_pair_ct": 0,
+        "csd_rebuild_started_ct": 0,
+        "csd_rebuild_applied_ct": 0,
+        "csd_rebuild_wall_sec": 0,
+        "csd_dp_aggregate_started_ct": 0,
+        "csd_dp_aggregate_pair_ct": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,109 @@
+{
+  "task": "aime25_avg16",
+  "task_spec": "aime25_avg|0",
+  "elapsed_sec": 2905.212077267468,
+  "max_samples": null,
+  "base_url": "http://127.0.0.1:41632/v1",
+  "model": "/data/model/DeepSeek-V4-Flash-DSpark",
+  "generation_parameters": {
+    "temperature": 1.0,
+    "top_p": 1.0,
+    "top_k": null,
+    "min_p": null,
+    "presence_penalty": null,
+    "repetition_penalty": null,
+    "seed": null,
+    "max_new_tokens": 81920
+  },
+  "http_policy": {
+    "parallel_requests": 64,
+    "independent_sample_requests": true,
+    "timeout_seconds": 86400.0,
+    "max_retries_after_initial_attempt": 0,
+    "litellm_num_retries": 0
+  },
+  "chat_encoding": {
+    "implementation": "sglang.encoding_dsv4",
+    "thinking": true,
+    "reasoning_effort": "high"
+  },
+  "effective_document_generation_sizes": [
+    81920
+  ],
+  "metric_names": [
+    "avg@n:n=16",
+    "pass@k:k=16&n=16"
+  ],
+  "request_timing": {
+    "streaming": false,
+    "includes_server_scheduling_and_ttft": true,
+    "excludes_client_idle_outside_active_request_intervals": true,
+    "request_count": 480,
+    "logical_problem_count": 30,
+    "independent_sample_requests": true,
+    "timed_request_count": 480,
+    "completion_tokens": 9134297,
+    "per_sample_completion_tokens": {
+      "mean": 19029.785416666666,
+      "p50": 12214,
+      "p90": 49244,
+      "p95": 78373,
+      "p99": 81920,
+      "max": 81920
+    },
+    "length_finish_count": 21,
+    "length_finish_rate": 0.04375,
+    "evaluation_wall_sec": 2905.212077267468,
+    "output_token_throughput": 3144.106783622961,
+    "output_token_throughput_definition": "sum(completion_tokens) / pipeline.evaluate() elapsed; matches the existing MTP report convention",
+    "active_request_union_sec": 2902.0078335031867,
+    "active_request_union_output_tok_s": 3147.5783402601796,
+    "active_request_union_output_definition": "sum(completion_tokens) / union(all non-streaming request wall intervals)"
+  },
+  "results": {
+    "config_general": {
+      "lighteval_sha": "?",
+      "num_fewshot_seeds": 1,
+      "max_samples": null,
+      "job_id": "0",
+      "start_time": 24987297.13384752,
+      "end_time": 24990207.670371614,
+      "total_evaluation_time_secondes": "2910.536524094641",
+      "model_config": "model_name='openai//data/model/DeepSeek-V4-Flash-DSpark' generation_parameters=GenerationParameters(num_blocks=None, block_size=None, early_stopping=None, repetition_penalty=None, frequency_penalty=None, length_penalty=None, presence_penalty=None, max_new_tokens=81920, min_new_tokens=None, seed=None, stop_tokens=None, temperature=1.0, top_k=None, min_p=None, top_p=1.0, truncate_prompt=None, cache_implementation=None, response_format=None) system_prompt=None cache_dir='~/.cache/huggingface/lighteval' provider='openai' base_url='http://127.0.0.1:41632/v1' api_key='EMPTY' concurrent_requests=64 verbose=False max_model_length=96000 api_max_retry=1 api_retry_sleep=1.0 api_retry_multiplier=2.0 timeout=86400.0",
+      "model_name": "openai//data/model/DeepSeek-V4-Flash-DSpark"
+    },
+    "results": {
+      "aime25_avg:0": {
+        "avg@n:n=16": 0.9354166666666667,
+        "avg@n:n=16_stderr": 0.03488014851654732,
+        "pass@k:k=16&n=16": 1.0,
+        "pass@k:k=16&n=16_stderr": 0.0
+      },
+      "all": {
+        "avg@n:n=16": 0.9354166666666667,
+        "avg@n:n=16_stderr": 0.03488014851654732,
+        "pass@k:k=16&n=16": 1.0,
+        "pass@k:k=16&n=16_stderr": 0.0
+      }
+    },
+    "versions": {},
+    "config_tasks": {
+      "aime25_avg:0": "|            Key            |                                                              Value                                                               |\n|---------------------------|----------------------------------------------------------------------------------------------------------------------------------|\n|name                       |aime25_avg                                                                                                                        |\n|prompt_function            |aime_prompt                                                                                                                       |\n|hf_repo                    |yentinglin/aime_2025                                                                                                              |\n|hf_subset                  |default                                                                                                                           |\n|metrics 0: metric_name     |avg@n:n=16                                                                                                                        |\n|metrics 0: higher_is_better|True                                                                                                                              |\n|metrics 0: category        |<SamplingMethod.GENERATIVE: 'GENERATIVE'>                                                                                         |\n|metrics 0: sample_level_fn |AvgAtN(normalize=None, strip_strings=False, compute_score=compute, type_exact_match=None, n=16, attribute_must_be_set=['n'])      |\n|metrics 0: corpus_level_fn |mean                                                                                                                              |\n|metrics 0: batched_compute |False                                                                                                                             |\n|metrics 1: metric_name     |pass@k:k=16&n=16                                                                                                                  |\n|metrics 1: higher_is_better|True                                                                                                                              |\n|metrics 1: category        |<SamplingMethod.GENERATIVE: 'GENERATIVE'>                                                                                         |\n|metrics 1: sample_level_fn |PassAtK(normalize=None, strip_strings=True, compute_score=compute, type_exact_match=None, k=16, n=16, attribute_must_be_set=['k'])|\n|metrics 1: corpus_level_fn |mean                                                                                                                              |\n|metrics 1: batched_compute |False                                                                                                                             |\n|hf_data_files              |None                                                                                                                              |\n|solver                     |None                                                                                                                              |\n|scorer                     |None                                                                                                                              |\n|sample_fields              |record_to_sample                                                                                                                  |\n|sample_to_fewshot          |None                                                                                                                              |\n|filter                     |None                                                                                                                              |\n|hf_revision                |None                                                                                                                              |\n|hf_filter                  |None                                                                                                                              |\n|hf_avail_splits            |('train',)                                                                                                                        |\n|evaluation_splits          |('train',)                                                                                                                        |\n|few_shots_split            |None                                                                                                                              |\n|few_shots_select           |None                                                                                                                              |\n|generation_size            |81920                                                                                                                             |\n|generation_grammar         |None                                                                                                                              |\n|stop_sequence              |()                                                                                                                                |\n|num_samples                |None                                                                                                                              |\n|original_num_docs          |-1                                                                                                                                |\n|effective_num_docs         |-1                                                                                                                                |\n|must_remove_duplicate_docs |False                                                                                                                             |\n|num_fewshots               |0                                                                                                                                 |\n|version                    |2                                                                                                                                 |\n"
+    },
+    "summary_tasks": {
+      "aime25_avg:0": "DetailsLogger.CompiledDetail(hashes={'hash_examples': '8df1bb48b826e206', 'hash_full_prompts': 'ef46db3751d8e999', 'hash_input_tokens': 'f04b89be03da9f73', 'hash_cont_tokens': 'f04b89be03da9f73'}, truncated=0, non_truncated=0, padded=0, non_padded=0)"
+    },
+    "summary_general": {
+      "hashes": {
+        "hash_examples": "2011297d2e3a3d16",
+        "hash_full_prompts": "c166e5d20ad58f4e",
+        "hash_input_tokens": "de55390d2a4d32c7",
+        "hash_cont_tokens": "de55390d2a4d32c7"
+      },
+      "truncated": 0,
+      "non_truncated": 0,
+      "padded": 0,
+      "non_padded": 0
+    }
+  }
+}
