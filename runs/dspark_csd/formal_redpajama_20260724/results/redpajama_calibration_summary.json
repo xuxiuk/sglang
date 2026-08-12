@@ -1,0 +1,24 @@
+{
+  "task": "redpajama-csd-calibration",
+  "prompt_source": "/root/sglang-csd-archive-20260722/runs_legacy/redpajama/redpajama_csd_calibration_answer.jsonl",
+  "num_prompts": 6000,
+  "domain_counts": {
+    "arxiv": 1000,
+    "c4": 1000,
+    "common_crawl": 1000,
+    "github": 1000,
+    "stackexchange": 1000,
+    "wikipedia": 1000
+  },
+  "resumed_requests": 0,
+  "completed_requests_this_run": 6000,
+  "parallel": 8,
+  "max_new_tokens": 1024,
+  "temperature": 1.0,
+  "top_p": 1.0,
+  "elapsed_sec_this_run": 11435.48680388555,
+  "output_tokens_this_run": 5742241,
+  "output_throughput_this_run": 502.14224356840685,
+  "spec_verify_ct_this_run": 2178974,
+  "accept_length_this_run": 2.6352957859983643
+}

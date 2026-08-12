@@ -10,16 +10,29 @@ SPS_TABLE=${SPS_TABLE:-$ROOT/runs/dspark_blog_repro/profile/dspark_sps_additive_
 PROMPT=${PROMPT:-$ROOT/runs/dspark_blog_repro/prompts/frontier_prompt.txt}
 REDPAJAMA_PROMPTS=${REDPAJAMA_PROMPTS:-/root/sglang-csd-archive-20260722/runs_legacy/redpajama/redpajama_csd_calibration_answer.jsonl}
 CSD_TABLE=${CSD_TABLE:-$RUN_ROOT/tables/dspark_csd_merged.json}
-GPU_SET=${GPU_SET:-4,5,6,7}
+GPU_SET=${GPU_SET:-0,1,2,3,4,5,6,7}
+TP_SIZE=${TP_SIZE:-8}
+DP_SIZE=${DP_SIZE:-8}
+EP_SIZE=${EP_SIZE:-1}
+ENABLE_DP_ATTENTION=${ENABLE_DP_ATTENTION:-1}
+ENABLE_DP_LM_HEAD=${ENABLE_DP_LM_HEAD:-$ENABLE_DP_ATTENTION}
+MOE_A2A_BACKEND=${MOE_A2A_BACKEND:-none}
+MOE_RUNNER_BACKEND=${MOE_RUNNER_BACKEND:-flashinfer_mxfp4}
+DEEPEP_MODE=${DEEPEP_MODE:-auto}
+CHUNKED_PREFILL_SIZE=${CHUNKED_PREFILL_SIZE:-$((256 * DP_SIZE))}
 PORT=${PORT:-30000}
 DIST_INIT_ADDR=${DIST_INIT_ADDR:-}
 NCCL_PORT=${NCCL_PORT:-}
 ENTROPY_THRESHOLD=${ENTROPY_THRESHOLD:--1}
 ENTROPY_MIN_THRESHOLD=${ENTROPY_MIN_THRESHOLD:--1}
-MAX_RUNNING_REQUESTS=${MAX_RUNNING_REQUESTS:-256}
+MAX_RUNNING_REQUESTS=${MAX_RUNNING_REQUESTS:-64}
+SWA_FULL_TOKENS_RATIO=${SWA_FULL_TOKENS_RATIO:-0.2}
+MEM_FRACTION_STATIC=${MEM_FRACTION_STATIC:-0.8}
+SWA_EVICTION_INTERVAL=${SWA_EVICTION_INTERVAL:-128}
 CSD_DELTA_CAPACITY=${CSD_DELTA_CAPACITY:-16777216}
 CSD_PROB_RATIO=${CSD_PROB_RATIO:-0.3}
 CSD_REBUILD_THRESHOLD=${CSD_REBUILD_THRESHOLD:-4096}
+RAGGED_VERIFY_MODE=${RAGGED_VERIFY_MODE:-compact}
 
 source /root/miniconda3/etc/profile.d/conda.sh
 conda activate sglang-dspark-csd-cu128
@@ -30,20 +43,38 @@ export CUDA_VISIBLE_DEVICES="$GPU_SET"
 export NCCL_IB_DISABLE=1
 export NO_PROXY=127.0.0.1,localhost
 export no_proxy=127.0.0.1,localhost
-export SGLANG_RAGGED_VERIFY_MODE=compact
+export SGLANG_RAGGED_VERIFY_MODE="$RAGGED_VERIFY_MODE"
+export SGLANG_SWA_EVICTION_INTERVAL="$SWA_EVICTION_INTERVAL"
 
 common_server_args=(
   --model-path "$MODEL"
-  --tp 4 --dp-size 4 --enable-dp-attention --enable-dp-lm-head
-  --moe-a2a-backend none --moe-runner-backend flashinfer_mxfp4
-  --disable-flashinfer-autotune --swa-full-tokens-ratio 0.1
-  --chunked-prefill-size 1024 --mem-fraction-static 0.8
+  --tp "$TP_SIZE" --dp-size "$DP_SIZE" --ep-size "$EP_SIZE"
+  --moe-a2a-backend "$MOE_A2A_BACKEND" --moe-runner-backend "$MOE_RUNNER_BACKEND"
+  --disable-flashinfer-autotune --swa-full-tokens-ratio "$SWA_FULL_TOKENS_RATIO"
+  --chunked-prefill-size "$CHUNKED_PREFILL_SIZE" --mem-fraction-static "$MEM_FRACTION_STATIC"
   --cuda-graph-max-bs 64 --max-running-requests "$MAX_RUNNING_REQUESTS"
   --disable-radix-cache --trust-remote-code
   --host 0.0.0.0 --port "$PORT"
-  --speculative-algorithm DSPARK
-  --speculative-dspark-sps-table-path "$SPS_TABLE"
 )
+
+if [[ "$ENABLE_DP_ATTENTION" == 1 ]]; then
+  common_server_args+=(--enable-dp-attention)
+fi
+if [[ "$ENABLE_DP_LM_HEAD" == 1 ]]; then
+  common_server_args+=(--enable-dp-lm-head)
+fi
+if [[ "$MOE_A2A_BACKEND" == deepep ]]; then
+  common_server_args+=(--deepep-mode "$DEEPEP_MODE")
+fi
+
+if [[ "$ENABLE_DP_ATTENTION" == 1 && "$MOE_A2A_BACKEND" != none ]]; then
+  echo "DSpark DP attention requires MOE_A2A_BACKEND=none in this commit" >&2
+  exit 2
+fi
+if [[ "$ENABLE_DP_ATTENTION" == 1 && "$DP_SIZE" -gt "$TP_SIZE" ]]; then
+  echo "DP_SIZE cannot exceed TP_SIZE when DP attention is enabled" >&2
+  exit 2
+fi
 
 # Multiple four-GPU servers can coexist on one host only when their internal
 # distributed-control ports are disjoint.  Leave these unset for the normal
@@ -59,8 +90,15 @@ serve() {
   local method=$1
   shift
   test -s "$SPS_TABLE"
-  python -m sglang.launch_server "${common_server_args[@]}" "$@" \
+  python -m sglang.launch_server "${common_server_args[@]}" \
+    --speculative-algorithm DSPARK \
+    --speculative-dspark-sps-table-path "$SPS_TABLE" "$@" \
     2>&1 | tee "$RUN_ROOT/logs/server_${method}.log"
+}
+
+serve_auto() {
+  python -m sglang.launch_server "${common_server_args[@]}" \
+    2>&1 | tee "$RUN_ROOT/logs/server_auto.log"
 }
 
 benchmark() {
@@ -79,6 +117,9 @@ benchmark() {
 }
 
 case "${1:-}" in
+  auto-server)
+    serve_auto
+    ;;
   calibration-server)
     serve calibration \
       --speculative-csd \
@@ -127,7 +168,10 @@ case "${1:-}" in
       -d "{\"path\":\"$RUN_ROOT/tables/dspark_csd_rank.json\",\"metadata\":{\"dataset\":\"${CALIBRATION_DATASET:-redpajama_6domains_n1000}\",\"temperature\":${CALIBRATION_TEMPERATURE:-1.0}}}" \
       | tee "$RUN_ROOT/logs/export_table.json"
     mapfile -t shards < <(find "$RUN_ROOT/tables" -name 'dspark_csd_rank.dp*.json' -type f | sort)
-    test "${#shards[@]}" -eq 4 || { echo "Expected 4 DP table shards" >&2; exit 1; }
+    test "${#shards[@]}" -eq "$DP_SIZE" || {
+      echo "Expected $DP_SIZE DP table shards, found ${#shards[@]}" >&2
+      exit 1
+    }
     python scripts/merge_csd_tables.py --inputs "${shards[@]}" --output "$CSD_TABLE"
     ;;
   metrics)

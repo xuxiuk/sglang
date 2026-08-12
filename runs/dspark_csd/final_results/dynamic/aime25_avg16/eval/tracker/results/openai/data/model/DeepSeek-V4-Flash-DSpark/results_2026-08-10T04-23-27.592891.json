@@ -1,0 +1,139 @@
+{
+  "config_general": {
+    "lighteval_sha": "?",
+    "num_fewshot_seeds": 1,
+    "max_samples": null,
+    "job_id": "0",
+    "start_time": 24987297.13384752,
+    "end_time": 24990207.670371614,
+    "total_evaluation_time_secondes": "2910.536524094641",
+    "model_config": {
+      "model_name": "openai//data/model/DeepSeek-V4-Flash-DSpark",
+      "generation_parameters": {
+        "num_blocks": null,
+        "block_size": null,
+        "early_stopping": null,
+        "repetition_penalty": null,
+        "frequency_penalty": null,
+        "length_penalty": null,
+        "presence_penalty": null,
+        "max_new_tokens": 81920,
+        "min_new_tokens": null,
+        "seed": null,
+        "stop_tokens": null,
+        "temperature": 1.0,
+        "top_k": null,
+        "min_p": null,
+        "top_p": 1.0,
+        "truncate_prompt": null,
+        "cache_implementation": null,
+        "response_format": null
+      },
+      "system_prompt": null,
+      "cache_dir": "~/.cache/huggingface/lighteval",
+      "provider": "openai",
+      "base_url": "http://127.0.0.1:41632/v1",
+      "api_key": "EMPTY",
+      "concurrent_requests": 64,
+      "verbose": false,
+      "max_model_length": 96000,
+      "api_max_retry": 1,
+      "api_retry_sleep": 1.0,
+      "api_retry_multiplier": 2.0,
+      "timeout": 86400.0
+    },
+    "model_name": "openai//data/model/DeepSeek-V4-Flash-DSpark"
+  },
+  "results": {
+    "aime25_avg|0": {
+      "avg@n:n=16": 0.9354166666666667,
+      "avg@n:n=16_stderr": 0.03488014851654732,
+      "pass@k:k=16&n=16": 1.0,
+      "pass@k:k=16&n=16_stderr": 0.0
+    },
+    "all": {
+      "avg@n:n=16": 0.9354166666666667,
+      "avg@n:n=16_stderr": 0.03488014851654732,
+      "pass@k:k=16&n=16": 1.0,
+      "pass@k:k=16&n=16_stderr": 0.0
+    }
+  },
+  "versions": {},
+  "config_tasks": {
+    "aime25_avg|0": {
+      "name": "aime25_avg",
+      "prompt_function": "aime_prompt",
+      "hf_repo": "yentinglin/aime_2025",
+      "hf_subset": "default",
+      "metrics": [
+        {
+          "metric_name": "avg@n:n=16",
+          "higher_is_better": true,
+          "category": "GENERATIVE",
+          "sample_level_fn": "AvgAtN(normalize=None, strip_strings=False, compute_score=compute, type_exact_match=None, n=16, attribute_must_be_set=['n'])",
+          "corpus_level_fn": "mean",
+          "batched_compute": false
+        },
+        {
+          "metric_name": "pass@k:k=16&n=16",
+          "higher_is_better": true,
+          "category": "GENERATIVE",
+          "sample_level_fn": "PassAtK(normalize=None, strip_strings=True, compute_score=compute, type_exact_match=None, k=16, n=16, attribute_must_be_set=['k'])",
+          "corpus_level_fn": "mean",
+          "batched_compute": false
+        }
+      ],
+      "hf_data_files": null,
+      "solver": null,
+      "scorer": null,
+      "sample_fields": "record_to_sample",
+      "sample_to_fewshot": null,
+      "filter": null,
+      "hf_revision": null,
+      "hf_filter": null,
+      "hf_avail_splits": [
+        "train"
+      ],
+      "evaluation_splits": [
+        "train"
+      ],
+      "few_shots_split": null,
+      "few_shots_select": null,
+      "generation_size": 81920,
+      "generation_grammar": null,
+      "stop_sequence": [],
+      "num_samples": null,
+      "original_num_docs": -1,
+      "effective_num_docs": -1,
+      "must_remove_duplicate_docs": false,
+      "num_fewshots": 0,
+      "version": 2
+    }
+  },
+  "summary_tasks": {
+    "aime25_avg|0": {
+      "hashes": {
+        "hash_examples": "8df1bb48b826e206",
+        "hash_full_prompts": "ef46db3751d8e999",
+        "hash_input_tokens": "f04b89be03da9f73",
+        "hash_cont_tokens": "f04b89be03da9f73"
+      },
+      "truncated": 0,
+      "non_truncated": 0,
+      "padded": 0,
+      "non_padded": 0
+    }
+  },
+  "summary_general": {
+    "hashes": {
+      "hash_examples": "2011297d2e3a3d16",
+      "hash_full_prompts": "c166e5d20ad58f4e",
+      "hash_input_tokens": "de55390d2a4d32c7",
+      "hash_cont_tokens": "de55390d2a4d32c7"
+    },
+    "truncated": 0,
+    "non_truncated": 0,
+    "padded": 0,
+    "non_padded": 0
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "target_model": "/data/model/DeepSeek-V4-Flash",
+  "draft_model": "/data/model/DeepSeek-V4-Flash-MTP-Draft",
+  "algorithm": "EAGLE",
+  "speculative_num_steps": 3,
+  "speculative_eagle_topk": 1,
+  "speculative_num_draft_tokens": 4,
+  "tp_size": 4,
+  "dp_size": 4,
+  "gpu_set": "4,5,6,7",
+  "dataset": "redpajama_6domains_n1000",
+  "num_prompts": 6000,
+  "max_new_tokens": 1024,
+  "temperature": 1.0,
+  "top_p": 1.0,
+  "parallel": 48,
+  "csd_force_accept_disabled": true,
+  "csd_dynamic_update_ignore_prob_ratio": true,
+  "csd_freq_threshold": 6,
+  "csd_delta_capacity": 16777216,
+  "csd_rebuild_threshold": 16777216,
+  "aggregation": "four independent DP shards summed once after calibration"
+}

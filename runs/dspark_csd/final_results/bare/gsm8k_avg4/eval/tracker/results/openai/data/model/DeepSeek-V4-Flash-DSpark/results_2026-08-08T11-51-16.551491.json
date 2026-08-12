@@ -1,0 +1,145 @@
+{
+  "config_general": {
+    "lighteval_sha": "?",
+    "num_fewshot_seeds": 1,
+    "max_samples": null,
+    "job_id": "0",
+    "start_time": 24843031.26459366,
+    "end_time": 24844276.62157584,
+    "total_evaluation_time_secondes": "1245.356982178986",
+    "model_config": {
+      "model_name": "openai//data/model/DeepSeek-V4-Flash-DSpark",
+      "generation_parameters": {
+        "num_blocks": null,
+        "block_size": null,
+        "early_stopping": null,
+        "repetition_penalty": null,
+        "frequency_penalty": null,
+        "length_penalty": null,
+        "presence_penalty": null,
+        "max_new_tokens": 81920,
+        "min_new_tokens": null,
+        "seed": null,
+        "stop_tokens": null,
+        "temperature": 1.0,
+        "top_k": null,
+        "min_p": null,
+        "top_p": 1.0,
+        "truncate_prompt": null,
+        "cache_implementation": null,
+        "response_format": null
+      },
+      "system_prompt": null,
+      "cache_dir": "~/.cache/huggingface/lighteval",
+      "provider": "openai",
+      "base_url": "http://127.0.0.1:37256/v1",
+      "api_key": "EMPTY",
+      "concurrent_requests": 64,
+      "verbose": false,
+      "max_model_length": 96000,
+      "api_max_retry": 1,
+      "api_retry_sleep": 1.0,
+      "api_retry_multiplier": 2.0,
+      "timeout": 86400.0
+    },
+    "model_name": "openai//data/model/DeepSeek-V4-Flash-DSpark"
+  },
+  "results": {
+    "gsm8k_avg|0": {
+      "avg@n:n=4": 0.898786959818044,
+      "avg@n:n=4_stderr": 0.006072858288794412,
+      "pass@k:k=4&n=4": 0.9719484457922669,
+      "pass@k:k=4&n=4_stderr": 0.004548229533836347
+    },
+    "all": {
+      "avg@n:n=4": 0.898786959818044,
+      "avg@n:n=4_stderr": 0.006072858288794412,
+      "pass@k:k=4&n=4": 0.9719484457922669,
+      "pass@k:k=4&n=4_stderr": 0.004548229533836347
+    }
+  },
+  "versions": {},
+  "config_tasks": {
+    "gsm8k_avg|0": {
+      "name": "gsm8k_avg",
+      "prompt_function": "gsm8k_prompt",
+      "hf_repo": "openai/gsm8k",
+      "hf_subset": "main",
+      "metrics": [
+        {
+          "metric_name": "avg@n:n=4",
+          "higher_is_better": true,
+          "category": "GENERATIVE",
+          "sample_level_fn": "AvgAtN(normalize=None, strip_strings=False, compute_score=compute, type_exact_match=None, n=4, attribute_must_be_set=['n'])",
+          "corpus_level_fn": "mean",
+          "batched_compute": false
+        },
+        {
+          "metric_name": "pass@k:k=4&n=4",
+          "higher_is_better": true,
+          "category": "GENERATIVE",
+          "sample_level_fn": "PassAtK(normalize=None, strip_strings=True, compute_score=compute, type_exact_match=None, k=4, n=4, attribute_must_be_set=['k'])",
+          "corpus_level_fn": "mean",
+          "batched_compute": false
+        }
+      ],
+      "hf_data_files": null,
+      "solver": [
+        "solve",
+        "solve"
+      ],
+      "scorer": "score",
+      "sample_fields": "record_to_sample",
+      "sample_to_fewshot": "sample_to_fewshot",
+      "filter": null,
+      "hf_revision": null,
+      "hf_filter": null,
+      "hf_avail_splits": [
+        "train",
+        "test"
+      ],
+      "evaluation_splits": [
+        "test"
+      ],
+      "few_shots_split": null,
+      "few_shots_select": "random_sampling_from_train",
+      "generation_size": 81920,
+      "generation_grammar": null,
+      "stop_sequence": [
+        "Question:"
+      ],
+      "num_samples": null,
+      "original_num_docs": -1,
+      "effective_num_docs": -1,
+      "must_remove_duplicate_docs": false,
+      "num_fewshots": 0,
+      "version": 1
+    }
+  },
+  "summary_tasks": {
+    "gsm8k_avg|0": {
+      "hashes": {
+        "hash_examples": "0ed016e24e7512fd",
+        "hash_full_prompts": "ef46db3751d8e999",
+        "hash_input_tokens": "256085ff238ae82a",
+        "hash_cont_tokens": "256085ff238ae82a"
+      },
+      "truncated": 0,
+      "non_truncated": 0,
+      "padded": 0,
+      "non_padded": 0
+    }
+  },
+  "summary_general": {
+    "hashes": {
+      "hash_examples": "bc71463e88551d0e",
+      "hash_full_prompts": "c166e5d20ad58f4e",
+      "hash_input_tokens": "c7f200d6658423d4",
+      "hash_cont_tokens": "c7f200d6658423d4"
+    },
+    "truncated": 0,
+    "non_truncated": 0,
+    "padded": 0,
+    "non_padded": 0
+  }
+}

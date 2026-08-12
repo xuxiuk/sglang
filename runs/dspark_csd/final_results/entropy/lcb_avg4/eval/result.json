@@ -1,0 +1,109 @@
+{
+  "task": "lcb",
+  "task_spec": "lcb:codegeneration_v6|0",
+  "elapsed_sec": 5341.291301887482,
+  "max_samples": null,
+  "base_url": "http://127.0.0.1:36096/v1",
+  "model": "/data/model/DeepSeek-V4-Flash-DSpark",
+  "generation_parameters": {
+    "temperature": 1.0,
+    "top_p": 1.0,
+    "top_k": null,
+    "min_p": null,
+    "presence_penalty": null,
+    "repetition_penalty": null,
+    "seed": null,
+    "max_new_tokens": 81920
+  },
+  "http_policy": {
+    "parallel_requests": 48,
+    "independent_sample_requests": true,
+    "timeout_seconds": 86400.0,
+    "max_retries_after_initial_attempt": 0,
+    "litellm_num_retries": 0
+  },
+  "chat_encoding": {
+    "implementation": "sglang.encoding_dsv4",
+    "thinking": true,
+    "reasoning_effort": "high"
+  },
+  "effective_document_generation_sizes": [
+    81920
+  ],
+  "metric_names": [
+    "codegen_pass@1:avg4",
+    "codegen_pass@4"
+  ],
+  "request_timing": {
+    "streaming": false,
+    "includes_server_scheduling_and_ttft": true,
+    "excludes_client_idle_outside_active_request_intervals": true,
+    "request_count": 700,
+    "logical_problem_count": 175,
+    "independent_sample_requests": true,
+    "timed_request_count": 700,
+    "completion_tokens": 12263202,
+    "per_sample_completion_tokens": {
+      "mean": 17518.86,
+      "p50": 8517,
+      "p90": 50441,
+      "p95": 64472,
+      "p99": 81920,
+      "max": 81920
+    },
+    "length_finish_count": 12,
+    "length_finish_rate": 0.017142857142857144,
+    "evaluation_wall_sec": 5341.291301887482,
+    "output_token_throughput": 2295.924582069973,
+    "output_token_throughput_definition": "sum(completion_tokens) / pipeline.evaluate() elapsed; matches the existing MTP report convention",
+    "active_request_union_sec": 4421.500785108656,
+    "active_request_union_output_tok_s": 2773.538351797135,
+    "active_request_union_output_definition": "sum(completion_tokens) / union(all non-streaming request wall intervals)"
+  },
+  "results": {
+    "config_general": {
+      "lighteval_sha": "?",
+      "num_fewshot_seeds": 1,
+      "max_samples": null,
+      "job_id": "0",
+      "start_time": 24826783.451365244,
+      "end_time": 24832142.730367295,
+      "total_evaluation_time_secondes": "5359.2790020518005",
+      "model_config": "model_name='openai//data/model/DeepSeek-V4-Flash-DSpark' generation_parameters=GenerationParameters(num_blocks=None, block_size=None, early_stopping=None, repetition_penalty=None, frequency_penalty=None, length_penalty=None, presence_penalty=None, max_new_tokens=81920, min_new_tokens=None, seed=None, stop_tokens=None, temperature=1.0, top_k=None, min_p=None, top_p=1.0, truncate_prompt=None, cache_implementation=None, response_format=None) system_prompt='You are an expert Python programmer. You will be given a question (problem specification) and will generate a correct Python program that matches the specification and passes all tests.' cache_dir='~/.cache/huggingface/lighteval' provider='openai' base_url='http://127.0.0.1:36096/v1' api_key='EMPTY' concurrent_requests=48 verbose=False max_model_length=96000 api_max_retry=1 api_retry_sleep=1.0 api_retry_multiplier=2.0 timeout=86400.0",
+      "model_name": "openai//data/model/DeepSeek-V4-Flash-DSpark"
+    },
+    "results": {
+      "lcb:codegeneration_v6:0": {
+        "codegen_pass@1:avg4": 0.8014285714285714,
+        "codegen_pass@1:avg4_stderr": 0.02549164701540602,
+        "codegen_pass@4": 0.8914285714285715,
+        "codegen_pass@4_stderr": 0.023584486605494684
+      },
+      "all": {
+        "codegen_pass@1:avg4": 0.8014285714285714,
+        "codegen_pass@1:avg4_stderr": 0.02549164701540602,
+        "codegen_pass@4": 0.8914285714285715,
+        "codegen_pass@4_stderr": 0.023584486605494684
+      }
+    },
+    "versions": {},
+    "config_tasks": {
+      "lcb:codegeneration_v6:0": "|            Key            |                                                     Value                                                     |\n|---------------------------|---------------------------------------------------------------------------------------------------------------|\n|name                       |lcb:codegeneration_v6                                                                                          |\n|prompt_function            |lcb_codegeneration_prompt_fn                                                                                   |\n|hf_repo                    |lighteval/code_generation_lite                                                                                 |\n|hf_subset                  |v6                                                                                                             |\n|metrics 0: metric_name     |['codegen_pass@1:avg4', 'codegen_pass@4']                                                                      |\n|metrics 0: higher_is_better|{'codegen_pass@1:avg4': True, 'codegen_pass@4': True}                                                          |\n|metrics 0: category        |<SamplingMethod.GENERATIVE: 'GENERATIVE'>                                                                      |\n|metrics 0: sample_level_fn |CodegenMetric(normalize=None, strip_strings=False, type_exact_match=full, compute_score=default_sample_scoring)|\n|metrics 0: corpus_level_fn |{'codegen_pass@1:avg4': <function mean at 0x7efe43a75af0>, 'codegen_pass@4': <function mean at 0x7efe43a75af0>}|\n|metrics 0: batched_compute |False                                                                                                          |\n|hf_data_files              |None                                                                                                           |\n|solver                     |None                                                                                                           |\n|scorer                     |None                                                                                                           |\n|sample_fields              |None                                                                                                           |\n|sample_to_fewshot          |None                                                                                                           |\n|filter                     |None                                                                                                           |\n|hf_revision                |None                                                                                                           |\n|hf_filter                  |None                                                                                                           |\n|hf_avail_splits            |('test',)                                                                                                      |\n|evaluation_splits          |('test',)                                                                                                      |\n|few_shots_split            |None                                                                                                           |\n|few_shots_select           |None                                                                                                           |\n|generation_size            |81920                                                                                                          |\n|generation_grammar         |None                                                                                                           |\n|stop_sequence              |[]                                                                                                             |\n|num_samples                |None                                                                                                           |\n|original_num_docs          |-1                                                                                                             |\n|effective_num_docs         |-1                                                                                                             |\n|must_remove_duplicate_docs |False                                                                                                          |\n|num_fewshots               |0                                                                                                              |\n|version                    |0                                                                                                              |\n"
+    },
+    "summary_tasks": {
+      "lcb:codegeneration_v6:0": "DetailsLogger.CompiledDetail(hashes={'hash_examples': '2b27fc9e06eb616d', 'hash_full_prompts': 'ef46db3751d8e999', 'hash_input_tokens': '12b510e6ea524aac', 'hash_cont_tokens': '12b510e6ea524aac'}, truncated=0, non_truncated=0, padded=0, non_padded=0)"
+    },
+    "summary_general": {
+      "hashes": {
+        "hash_examples": "1ced1687fd365167",
+        "hash_full_prompts": "c166e5d20ad58f4e",
+        "hash_input_tokens": "1f601057830a598f",
+        "hash_cont_tokens": "1f601057830a598f"
+      },
+      "truncated": 0,
+      "non_truncated": 0,
+      "padded": 0,
+      "non_padded": 0
+    }
+  }
+}

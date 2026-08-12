@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT=/root/sglang-dspark-csd
-RUN_ROOT=$ROOT/runs/dspark_csd/v4_mtp314_calibration_dp4_20260802
-PYTHON=/root/miniconda3/envs/sglang-dspark-csd-cu128/bin/python
-TARGET_MODEL=/data/model/DeepSeek-V4-Flash
-MTP_DRAFT=/data/model/DeepSeek-V4-Flash-MTP-Draft
-PROMPTS=/root/sglang-csd-archive-20260722/runs_legacy/redpajama/redpajama_csd_calibration_answer.jsonl
-PORT=32350
-DIST_INIT_ADDR=127.0.0.1:32360
-NCCL_PORT=32370
+ROOT=${ROOT:-/root/sglang-dspark-csd}
+RUN_ROOT=${RUN_ROOT:-$ROOT/runs/dspark_csd/v4_mtp314_calibration_dp4_20260802}
+PYTHON=${PYTHON:-/root/miniconda3/envs/sglang-dspark-csd-cu128/bin/python}
+TARGET_MODEL=${TARGET_MODEL:-/data/model/DeepSeek-V4-Flash}
+MTP_DRAFT=${MTP_DRAFT:-/data/model/DeepSeek-V4-Flash-MTP-Draft}
+PROMPTS=${PROMPTS:-/root/sglang-csd-archive-20260722/runs_legacy/redpajama/redpajama_csd_calibration_answer.jsonl}
+GPU_SET=${GPU_SET:-4,5,6,7}
+TP_SIZE=${TP_SIZE:-4}
+DP_SIZE=${DP_SIZE:-4}
+PARALLEL=${PARALLEL:-48}
+MAX_RUNNING_REQUESTS=${MAX_RUNNING_REQUESTS:-48}
+MEM_FRACTION_STATIC=${MEM_FRACTION_STATIC:-0.8}
+SWA_FULL_TOKENS_RATIO=${SWA_FULL_TOKENS_RATIO:-0.1}
+CHUNKED_PREFILL_SIZE=${CHUNKED_PREFILL_SIZE:-$((256 * DP_SIZE))}
+PORT=${PORT:-32350}
+DIST_INIT_ADDR=${DIST_INIT_ADDR:-127.0.0.1:32360}
+NCCL_PORT=${NCCL_PORT:-32370}
 SHARD_STEM=$RUN_ROOT/tables/v4_mtp314_redpajama_rank.json
 MERGED_TABLE=$RUN_ROOT/tables/v4_mtp314_redpajama_merged.json
 DELTA_CAPACITY=16777216
@@ -23,7 +31,7 @@ test ! -e "$MERGED_TABLE" || {
   exit 1
 }
 
-export CUDA_VISIBLE_DEVICES=4,5,6,7
+export CUDA_VISIBLE_DEVICES="$GPU_SET"
 export NCCL_IB_DISABLE=1
 export NO_PROXY=127.0.0.1,localhost
 export no_proxy=127.0.0.1,localhost
@@ -46,21 +54,21 @@ cat > "$RUN_ROOT/metadata/config.json" <<EOF
   "speculative_num_steps": 3,
   "speculative_eagle_topk": 1,
   "speculative_num_draft_tokens": 4,
-  "tp_size": 4,
-  "dp_size": 4,
-  "gpu_set": "4,5,6,7",
+  "tp_size": $TP_SIZE,
+  "dp_size": $DP_SIZE,
+  "gpu_set": "$GPU_SET",
   "dataset": "redpajama_6domains_n1000",
   "num_prompts": 6000,
   "max_new_tokens": 1024,
   "temperature": 1.0,
   "top_p": 1.0,
-  "parallel": 48,
+  "parallel": $PARALLEL,
   "csd_force_accept_disabled": true,
   "csd_dynamic_update_ignore_prob_ratio": true,
   "csd_freq_threshold": 6,
   "csd_delta_capacity": $DELTA_CAPACITY,
   "csd_rebuild_threshold": $DELTA_CAPACITY,
-  "aggregation": "four independent DP shards summed once after calibration"
+  "aggregation": "$DP_SIZE independent DP shards summed once after calibration"
 }
 EOF
 
@@ -68,11 +76,11 @@ echo STARTING_SERVER > "$RUN_ROOT/STATUS"
 "$PYTHON" -m sglang.launch_server \
   --model-path "$TARGET_MODEL" \
   --speculative-draft-model-path "$MTP_DRAFT" \
-  --tp 4 --dp-size 4 --enable-dp-attention --enable-dp-lm-head \
+  --tp "$TP_SIZE" --dp-size "$DP_SIZE" --enable-dp-attention --enable-dp-lm-head \
   --moe-a2a-backend none --moe-runner-backend flashinfer_mxfp4 \
-  --disable-flashinfer-autotune --swa-full-tokens-ratio 0.1 \
-  --chunked-prefill-size 1024 --mem-fraction-static 0.8 \
-  --cuda-graph-max-bs 64 --max-running-requests 48 \
+  --disable-flashinfer-autotune --swa-full-tokens-ratio "$SWA_FULL_TOKENS_RATIO" \
+  --chunked-prefill-size "$CHUNKED_PREFILL_SIZE" --mem-fraction-static "$MEM_FRACTION_STATIC" \
+  --cuda-graph-max-bs 64 --max-running-requests "$MAX_RUNNING_REQUESTS" \
   --watchdog-timeout 7200 \
   --disable-radix-cache --trust-remote-code \
   --host 0.0.0.0 --port "$PORT" \
@@ -116,7 +124,7 @@ echo CALIBRATING > "$RUN_ROOT/STATUS"
   --output "$RUN_ROOT/results/redpajama_calibration_answers.jsonl" \
   --summary "$RUN_ROOT/results/redpajama_calibration_summary.json" \
   --host 127.0.0.1 --port "$PORT" \
-  --parallel 48 --max-new-tokens 1024 --temperature 1.0 --top-p 1.0 \
+  --parallel "$PARALLEL" --max-new-tokens 1024 --temperature 1.0 --top-p 1.0 \
   2>&1 | tee "$RUN_ROOT/logs/calibration_client.log"
 
 echo EXPORTING > "$RUN_ROOT/STATUS"
@@ -126,8 +134,8 @@ curl --noproxy '*' -fsS -X POST "http://127.0.0.1:$PORT/save_csd_table" \
   | tee "$RUN_ROOT/logs/export_table.json"
 
 mapfile -t shards < <(find "$RUN_ROOT/tables" -maxdepth 1 -name 'v4_mtp314_redpajama_rank.dp*.json' -type f | sort)
-test "${#shards[@]}" -eq 4 || {
-  echo "Expected 4 DP shards, got ${#shards[@]}" >&2
+test "${#shards[@]}" -eq "$DP_SIZE" || {
+  echo "Expected $DP_SIZE DP shards, got ${#shards[@]}" >&2
   exit 1
 }
 

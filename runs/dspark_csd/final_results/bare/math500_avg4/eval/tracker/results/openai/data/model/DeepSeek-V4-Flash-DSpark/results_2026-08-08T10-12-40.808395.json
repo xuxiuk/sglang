@@ -1,0 +1,142 @@
+{
+  "config_general": {
+    "lighteval_sha": "?",
+    "num_fewshot_seeds": 1,
+    "max_samples": null,
+    "job_id": "0",
+    "start_time": 24836808.28847092,
+    "end_time": 24838360.884607308,
+    "total_evaluation_time_secondes": "1552.5961363874376",
+    "model_config": {
+      "model_name": "openai//data/model/DeepSeek-V4-Flash-DSpark",
+      "generation_parameters": {
+        "num_blocks": null,
+        "block_size": null,
+        "early_stopping": null,
+        "repetition_penalty": null,
+        "frequency_penalty": null,
+        "length_penalty": null,
+        "presence_penalty": null,
+        "max_new_tokens": 81920,
+        "min_new_tokens": null,
+        "seed": null,
+        "stop_tokens": null,
+        "temperature": 1.0,
+        "top_k": null,
+        "min_p": null,
+        "top_p": 1.0,
+        "truncate_prompt": null,
+        "cache_implementation": null,
+        "response_format": null
+      },
+      "system_prompt": null,
+      "cache_dir": "~/.cache/huggingface/lighteval",
+      "provider": "openai",
+      "base_url": "http://127.0.0.1:37128/v1",
+      "api_key": "EMPTY",
+      "concurrent_requests": 64,
+      "verbose": false,
+      "max_model_length": 96000,
+      "api_max_retry": 1,
+      "api_retry_sleep": 1.0,
+      "api_retry_multiplier": 2.0,
+      "timeout": 86400.0
+    },
+    "model_name": "openai//data/model/DeepSeek-V4-Flash-DSpark"
+  },
+  "results": {
+    "math_500|0": {
+      "avg@n:n=4": 0.8405,
+      "avg@n:n=4_stderr": 0.01333135214071702,
+      "pass@k:k=4&n=4": 0.93,
+      "pass@k:k=4&n=4_stderr": 0.01142194912629566
+    },
+    "all": {
+      "avg@n:n=4": 0.8405,
+      "avg@n:n=4_stderr": 0.01333135214071702,
+      "pass@k:k=4&n=4": 0.93,
+      "pass@k:k=4&n=4_stderr": 0.01142194912629566
+    }
+  },
+  "versions": {},
+  "config_tasks": {
+    "math_500|0": {
+      "name": "math_500",
+      "prompt_function": "math_500_prompt",
+      "hf_repo": "HuggingFaceH4/MATH-500",
+      "hf_subset": "default",
+      "metrics": [
+        {
+          "metric_name": "avg@n:n=4",
+          "higher_is_better": true,
+          "category": "GENERATIVE",
+          "sample_level_fn": "AvgAtN(normalize=None, strip_strings=False, compute_score=compute, type_exact_match=None, n=4, attribute_must_be_set=['n'])",
+          "corpus_level_fn": "mean",
+          "batched_compute": false
+        },
+        {
+          "metric_name": "pass@k:k=4&n=4",
+          "higher_is_better": true,
+          "category": "GENERATIVE",
+          "sample_level_fn": "PassAtK(normalize=None, strip_strings=True, compute_score=compute, type_exact_match=None, k=4, n=4, attribute_must_be_set=['k'])",
+          "corpus_level_fn": "mean",
+          "batched_compute": false
+        }
+      ],
+      "hf_data_files": null,
+      "solver": [
+        "solve",
+        "solve"
+      ],
+      "scorer": "score",
+      "sample_fields": "record_to_sample",
+      "sample_to_fewshot": null,
+      "filter": null,
+      "hf_revision": null,
+      "hf_filter": null,
+      "hf_avail_splits": [
+        "test"
+      ],
+      "evaluation_splits": [
+        "test"
+      ],
+      "few_shots_split": null,
+      "few_shots_select": null,
+      "generation_size": 81920,
+      "generation_grammar": null,
+      "stop_sequence": [],
+      "num_samples": null,
+      "original_num_docs": -1,
+      "effective_num_docs": -1,
+      "must_remove_duplicate_docs": false,
+      "num_fewshots": 0,
+      "version": 2
+    }
+  },
+  "summary_tasks": {
+    "math_500|0": {
+      "hashes": {
+        "hash_examples": "9f076bfe85016b9f",
+        "hash_full_prompts": "ef46db3751d8e999",
+        "hash_input_tokens": "6e2146e74832427e",
+        "hash_cont_tokens": "6e2146e74832427e"
+      },
+      "truncated": 0,
+      "non_truncated": 0,
+      "padded": 0,
+      "non_padded": 0
+    }
+  },
+  "summary_general": {
+    "hashes": {
+      "hash_examples": "84ad8aad9d73b991",
+      "hash_full_prompts": "c166e5d20ad58f4e",
+      "hash_input_tokens": "d2f586f80c6a4bf1",
+      "hash_cont_tokens": "d2f586f80c6a4bf1"
+    },
+    "truncated": 0,
+    "non_truncated": 0,
+    "padded": 0,
+    "non_padded": 0
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "num_shards": 4,
+  "shard_entries": [
+    363409,
+    356146,
+    361413,
+    359687
+  ],
+  "shard_frequency_totals": [
+    663120,
+    650129,
+    657695,
+    656141
+  ],
+  "merged_unique_pairs": 1147023,
+  "merged_frequency_total": 2627085,
+  "frequency_conservation": true
+}

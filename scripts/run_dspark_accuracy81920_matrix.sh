@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Run accuracy and throughput tasks for all DSpark+CSD modes. The avg4 task
-# variants request four non-streaming completions per item and report both
-# pass@1 averaged over four draws and pass@4. Sampling follows the
+# variants report pass@1 averaged over four draws and pass@4. Each logical
+# n=4 item is sent as four independent n=1 HTTP requests, then regrouped by
+# prompt for metric aggregation. Sampling follows the
 # DeepSeek-V4-Flash-DSpark recommendation. The 81920 output cap is an explicit
 # experiment override. With DP=4 and client parallel=48, n=4 produces up to
 # 192 live sequences, so the formal default reserves 48 slots per DP rank.
@@ -12,20 +13,27 @@ ROOT=${ROOT:-/root/sglang-dspark-csd}
 RUN_ROOT=${RUN_ROOT:-$ROOT/runs/dspark_csd/accuracy81920_matrix_$(date +%Y%m%d_%H%M%S)}
 MODEL=${MODEL:-/data/model/DeepSeek-V4-Flash-DSpark}
 CSD_TABLE=${CSD_TABLE:-$ROOT/runs/dspark_csd/formal_redpajama_20260724/tables/dspark_csd_merged.json}
+SPS_TABLE=${SPS_TABLE:-$ROOT/runs/dspark_blog_repro/profile/dspark_sps_additive_h20_dp4_bs64.json}
 ENTROPY_THRESHOLD=${ENTROPY_THRESHOLD:-1.5}
 ENTROPY_MIN_THRESHOLD=${ENTROPY_MIN_THRESHOLD:--1}
 CSD_PROB_RATIO=${CSD_PROB_RATIO:-0.3}
 MAX_RUNNING_REQUESTS=${MAX_RUNNING_REQUESTS:-192}
+SWA_FULL_TOKENS_RATIO=${SWA_FULL_TOKENS_RATIO:-0.2}
+MEM_FRACTION_STATIC=${MEM_FRACTION_STATIC:-0.8}
+SWA_EVICTION_INTERVAL=${SWA_EVICTION_INTERVAL:-128}
 EVAL_THREADS=${EVAL_THREADS:-48}
 REQUEST_TIMEOUT_SECONDS=${REQUEST_TIMEOUT_SECONDS:-86400}
 MAX_RETRIES=${MAX_RETRIES:-0}
 MAX_TOKENS=${MAX_TOKENS:-81920}
+LCB_MAX_TOKENS=${LCB_MAX_TOKENS:-32768}
 MAX_MODEL_LENGTH=${MAX_MODEL_LENGTH:-96000}
 MAX_SAMPLES=${MAX_SAMPLES:-}
-GPU_SET=${GPU_SET:-4,5,6,7}
+RAGGED_VERIFY_MODE=${RAGGED_VERIFY_MODE:-compact}
+GPU_SET=${GPU_SET:-0,1,2,3,4,5,6,7}
 PORT=${PORT:-30000}
 DIST_INIT_ADDR=${DIST_INIT_ADDR:-}
 NCCL_PORT=${NCCL_PORT:-}
+PORT_STRIDE=${PORT_STRIDE:-32}
 METHODS=${METHODS:-"bare plain dynamic entropy"}
 TASKS=${TASKS:-"aime lcb"}
 LCEVAL_PYTHON=${LCEVAL_PYTHON:-/root/miniconda3/envs/sglang/bin/python}
@@ -48,6 +56,7 @@ export NO_PROXY="127.0.0.1,localhost,${NO_PROXY:-}"
 export no_proxy="127.0.0.1,localhost,${no_proxy:-}"
 
 test -s "$CSD_TABLE"
+test -s "$SPS_TABLE"
 test -x "$LCEVAL_PYTHON"
 test -d "$LIGHTEVAL_SRC/lighteval"
 mkdir -p "$RUN_ROOT"/{driver_logs,logs,results,tables}
@@ -60,6 +69,15 @@ cat >"$RUN_ROOT/config.txt" <<EOF
 started_at=$(date -Is)
 git_head=$(git rev-parse HEAD)
 model=$MODEL
+tp_size=${TP_SIZE:-8}
+dp_size=${DP_SIZE:-8}
+ep_size=${EP_SIZE:-1}
+enable_dp_attention=${ENABLE_DP_ATTENTION:-1}
+enable_dp_lm_head=${ENABLE_DP_LM_HEAD:-1}
+moe_a2a_backend=${MOE_A2A_BACKEND:-none}
+moe_runner_backend=${MOE_RUNNER_BACKEND:-flashinfer_mxfp4}
+deepep_mode=${DEEPEP_MODE:-auto}
+chunked_prefill_size=${CHUNKED_PREFILL_SIZE:-$((256 * ${DP_SIZE:-8}))}
 methods=$METHODS
 tasks=$TASKS
 temperature=1.0
@@ -70,12 +88,18 @@ chat_encoding=sglang.encoding_dsv4
 thinking=true
 reasoning_effort=high
 max_tokens=$MAX_TOKENS
+lcb_max_tokens=$LCB_MAX_TOKENS
 max_model_length=$MAX_MODEL_LENGTH
 max_samples=${MAX_SAMPLES:-all}
 gpu_set=$GPU_SET
 eval_threads=$EVAL_THREADS
-parallel_requests=$EVAL_THREADS
+parallel_independent_http_requests=$EVAL_THREADS
+samples_per_problem=$([[ "$TASKS" == *aime25_avg16* ]] && echo 16 || echo 4)
+ragged_verify_mode=$RAGGED_VERIFY_MODE
 max_running_requests=$MAX_RUNNING_REQUESTS
+swa_full_tokens_ratio=$SWA_FULL_TOKENS_RATIO
+mem_fraction_static=$MEM_FRACTION_STATIC
+swa_eviction_interval=$SWA_EVICTION_INTERVAL
 request_timeout_seconds=$REQUEST_TIMEOUT_SECONDS
 max_retries_after_initial_attempt=$MAX_RETRIES
 litellm_num_retries=0
@@ -83,7 +107,9 @@ server_lifecycle=restart_per_task_and_method
 http_port=$PORT
 dist_init_addr=${DIST_INIT_ADDR:-auto}
 nccl_port=${NCCL_PORT:-auto}
+port_stride=$PORT_STRIDE
 csd_table=$CSD_TABLE
+dspark_sps_table=$SPS_TABLE
 csd_table_sha256=$(sha256sum "$CSD_TABLE" | awk '{print $1}')
 csd_prob_ratio=$CSD_PROB_RATIO
 entropy_threshold=$ENTROPY_THRESHOLD
@@ -101,6 +127,11 @@ cleanup_server() {
       sleep 1
     done
     kill -TERM -- "-$server_pid" 2>/dev/null || true
+    for _ in $(seq 1 30); do
+      kill -0 "$server_pid" 2>/dev/null || break
+      sleep 1
+    done
+    kill -KILL -- "-$server_pid" 2>/dev/null || true
     wait "$server_pid" 2>/dev/null || true
   fi
   server_pid=""
@@ -138,11 +169,17 @@ run_scored_task() {
 
   case "$task" in
     aime25_avg4) eval_task=aime25_avg4; output_name=aime25_avg4 ;;
+    aime25_avg16) eval_task=aime25_avg16; output_name=aime25_avg16 ;;
     math500_avg4) eval_task=math500_avg4; output_name=math500_avg4 ;;
     lcb_avg4) eval_task=lcb; output_name=lcb_codegen_v6_avg4 ;;
     gsm8k_avg4) eval_task=gsm8k_avg4; output_name=gsm8k_avg4 ;;
     *) return 2 ;;
   esac
+
+  local task_max_tokens=$MAX_TOKENS
+  if [[ "$task" == "lcb_avg4" ]]; then
+    task_max_tokens=$LCB_MAX_TOKENS
+  fi
 
   local sample_args=()
   if [[ -n "$MAX_SAMPLES" ]]; then
@@ -156,13 +193,14 @@ run_scored_task() {
     --model "$MODEL" \
     --output-dir "$pair_root/eval" \
     --parallel "$EVAL_THREADS" \
-    --max-new-tokens "$MAX_TOKENS" \
+    --max-new-tokens "$task_max_tokens" \
     --max-model-length "$MAX_MODEL_LENGTH" \
     "${sample_args[@]}" \
     --temperature 1.0 --top-p 1.0 \
     --thinking --reasoning-effort high \
     --timeout "$REQUEST_TIMEOUT_SECONDS" \
     --max-retries "$MAX_RETRIES" \
+    --independent-samples \
     --request-timing-file "$pair_root/eval/request_timing.jsonl" \
     2>&1 | tee "$RUN_ROOT/driver_logs/eval_${method}_${output_name}.log"
 }
@@ -192,9 +230,21 @@ run_code_ood_task() {
     2>&1 | tee "$RUN_ROOT/driver_logs/eval_${method}_${task}.log"
 }
 
+base_port=$PORT
+base_dist_port=${DIST_INIT_ADDR##*:}
+base_nccl_port=${NCCL_PORT:-$((base_port + 20))}
+run_index=0
 for task in $TASKS; do
 for method in $METHODS; do
+  # A stopped SGLang parent can briefly leave scheduler/metrics children alive.
+  # Give every task/method an independent HTTP + internal-port range so that a
+  # late child from the preceding run cannot abort the next server startup.
+  PORT=$((base_port + run_index * PORT_STRIDE))
+  DIST_INIT_ADDR="127.0.0.1:$((base_dist_port + run_index * PORT_STRIDE))"
+  NCCL_PORT=$((base_nccl_port + run_index * PORT_STRIDE))
+  run_index=$((run_index + 1))
   case "$method" in
+    auto) server_mode=auto-server ;;
     bare) server_mode=bare-server ;;
     plain) server_mode=plain-server ;;
     dynamic) server_mode=dynamic-server ;;
@@ -206,13 +256,18 @@ for method in $METHODS; do
   pair_root="$RUN_ROOT/$method/$task"
   server_root="$pair_root/server"
   mkdir -p "$server_root/logs" "$pair_root/metrics"
-  echo "[$(date -Is)] start task=$task method=$method" | tee -a "$RUN_ROOT/driver_logs/supervisor.log"
+  echo "[$(date -Is)] start task=$task method=$method http_port=$PORT dist_init_addr=$DIST_INIT_ADDR nccl_port=$NCCL_PORT" | tee -a "$RUN_ROOT/driver_logs/supervisor.log"
 
   setsid env \
     ROOT="$ROOT" RUN_ROOT="$server_root" MODEL="$MODEL" PORT="$PORT" \
     GPU_SET="$GPU_SET" NCCL_NET="${NCCL_NET:-Socket}" \
     DIST_INIT_ADDR="$DIST_INIT_ADDR" NCCL_PORT="$NCCL_PORT" \
     MAX_RUNNING_REQUESTS="$MAX_RUNNING_REQUESTS" CSD_TABLE="$CSD_TABLE" \
+    SPS_TABLE="$SPS_TABLE" \
+    SWA_FULL_TOKENS_RATIO="$SWA_FULL_TOKENS_RATIO" \
+    MEM_FRACTION_STATIC="$MEM_FRACTION_STATIC" \
+    SWA_EVICTION_INTERVAL="$SWA_EVICTION_INTERVAL" \
+    RAGGED_VERIFY_MODE="$RAGGED_VERIFY_MODE" \
     CSD_PROB_RATIO="$CSD_PROB_RATIO" ENTROPY_THRESHOLD="$ENTROPY_THRESHOLD" \
     ENTROPY_MIN_THRESHOLD="$ENTROPY_MIN_THRESHOLD" \
     SGLANG_DEFAULT_THINKING=true SGLANG_DSV4_REASONING_EFFORT=high \

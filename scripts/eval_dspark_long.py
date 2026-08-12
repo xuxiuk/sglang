@@ -14,6 +14,7 @@ import hashlib
 import json
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -21,7 +22,14 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--task",
-        choices=("aime25", "aime25_avg4", "math500_avg4", "lcb", "gsm8k_avg4"),
+        choices=(
+            "aime25",
+            "aime25_avg4",
+            "aime25_avg16",
+            "math500_avg4",
+            "lcb",
+            "gsm8k_avg4",
+        ),
         required=True,
     )
     parser.add_argument("--base-url", default="http://127.0.0.1:30000/v1")
@@ -50,6 +58,15 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=0,
         help="Retries after the initial HTTP attempt. Formal runs use zero.",
+    )
+    parser.add_argument(
+        "--independent-samples",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Split an n>1 metric request into independent n=1 HTTP requests, "
+            "then combine the choices for LightEval metric aggregation."
+        ),
     )
     parser.add_argument(
         "--request-timing-file",
@@ -82,16 +99,17 @@ def main() -> None:
                 task_config.generation_size = args.max_new_tokens
         task_spec = "lcb:codegeneration_v6|0"
         system_prompt = lcb_tasks.SYSTEM_MESSAGE_GENERIC
-    elif args.task == "aime25_avg4":
+    elif args.task in {"aime25_avg4", "aime25_avg16"}:
         from lighteval.metrics.metrics import Metrics
         from lighteval.tasks.tasks import aime as aime_tasks
 
         for task_config in aime_tasks.TASKS_TABLE:
             if task_config.name == "aime25_avg":
                 task_config.generation_size = args.max_new_tokens
+                n = 16 if args.task == "aime25_avg16" else 4
                 task_config.metrics = [
-                    Metrics.avg_at_n_math(sample_params={"n": 4}),
-                    Metrics.pass_at_k_math(sample_params={"k": 4, "n": 4}),
+                    Metrics.avg_at_n_math(sample_params={"n": n}),
+                    Metrics.pass_at_k_math(sample_params={"k": n, "n": n}),
                 ]
         task_spec = "aime25_avg|0"
     elif args.task == "math500_avg4":
@@ -154,10 +172,83 @@ def main() -> None:
     original_completion = litellm.completion
     timing_records: list[dict] = []
     timing_lock = threading.Lock()
+    sample_context = threading.local()
     request_counter = 0
 
-    def completion_without_cache(*completion_args, **completion_kwargs):
+    def record_timing(
+        *, messages, started_at, ended_at, response, sample_index=None
+    ) -> None:
         nonlocal request_counter
+        usage = getattr(response, "usage", None)
+        completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+        choices = list(getattr(response, "choices", []) or [])
+        prompt_payload = json.dumps(
+            messages, ensure_ascii=False, sort_keys=True, default=str
+        ).encode("utf-8")
+        with timing_lock:
+            request_counter += 1
+            record = {
+                "request_id": request_counter,
+                "prompt_sha256": hashlib.sha256(prompt_payload).hexdigest(),
+                "sample_index": sample_index,
+                "request_start_s": started_at,
+                "request_end_s": ended_at,
+                "e2e_s": ended_at - started_at,
+                "completion_tokens": completion_tokens,
+                "choice_count": len(choices),
+                "finish_reasons": [
+                    getattr(choice, "finish_reason", None) for choice in choices
+                ],
+                "streaming": False,
+            }
+            timing_records.append(record)
+            with args.request_timing_file.open("a", encoding="utf-8") as stream_file:
+                stream_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+                stream_file.flush()
+
+    def call_one(completion_args, completion_kwargs, sample_index=None):
+        if sample_index is None:
+            sample_index = getattr(sample_context, "sample_index", None)
+        messages = completion_kwargs.get("messages")
+        started_at = time.perf_counter()
+        response = original_completion(*completion_args, **completion_kwargs)
+        ended_at = time.perf_counter()
+        if args.request_timing_file is not None:
+            record_timing(
+                messages=messages,
+                started_at=started_at,
+                ended_at=ended_at,
+                response=response,
+                sample_index=sample_index,
+            )
+        return response
+
+    def combine_independent_responses(responses):
+        combined = responses[0]
+        choices = []
+        completion_tokens = prompt_tokens = total_tokens = 0
+        for sample_index, response in enumerate(responses):
+            response_choices = list(getattr(response, "choices", []) or [])
+            if len(response_choices) != 1:
+                raise RuntimeError(
+                    "Independent n=1 request returned "
+                    f"{len(response_choices)} choices instead of one"
+                )
+            response_choices[0].index = sample_index
+            choices.extend(response_choices)
+            usage = getattr(response, "usage", None)
+            completion_tokens += int(getattr(usage, "completion_tokens", 0) or 0)
+            prompt_tokens += int(getattr(usage, "prompt_tokens", 0) or 0)
+            total_tokens += int(getattr(usage, "total_tokens", 0) or 0)
+        combined.choices = choices
+        usage = getattr(combined, "usage", None)
+        if usage is not None:
+            usage.completion_tokens = completion_tokens
+            usage.prompt_tokens = prompt_tokens
+            usage.total_tokens = total_tokens
+        return combined
+
+    def completion_without_cache(*completion_args, **completion_kwargs):
         completion_kwargs["caching"] = False
         # LiteLLM has its own retry layer in addition to LightEval's retry
         # loop. Disable it so a timed-out long generation is never resubmitted.
@@ -173,43 +264,8 @@ def main() -> None:
         chat_template_kwargs["reasoning_effort"] = args.reasoning_effort
         extra_body["chat_template_kwargs"] = chat_template_kwargs
         completion_kwargs["extra_body"] = extra_body
-        if args.request_timing_file is None:
-            return original_completion(*completion_args, **completion_kwargs)
-
-        # Keep the response non-streaming. LiteLLM's stream_chunk_builder only
-        # reconstructs choices[0], which corrupts n>1 evaluation. Request wall
-        # intervals still provide exact aggregate output throughput without
-        # double-counting overlapping concurrent requests.
         completion_kwargs["stream"] = False
-        messages = completion_kwargs.get("messages")
-        started_at = time.perf_counter()
-        response = original_completion(*completion_args, **completion_kwargs)
-        ended_at = time.perf_counter()
-
-        usage = getattr(response, "usage", None)
-        completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
-        prompt_payload = json.dumps(
-            messages, ensure_ascii=False, sort_keys=True, default=str
-        ).encode("utf-8")
-        with timing_lock:
-            request_counter += 1
-            record = {
-                "request_id": request_counter,
-                "prompt_sha256": hashlib.sha256(prompt_payload).hexdigest(),
-                "request_start_s": started_at,
-                "request_end_s": ended_at,
-                "e2e_s": ended_at - started_at,
-                "completion_tokens": completion_tokens,
-                "choice_count": len(getattr(response, "choices", []) or []),
-                "streaming": False,
-            }
-            timing_records.append(record)
-            # Persist each completed request immediately.  A long LCB run must
-            # retain partial timing data if the evaluator or server exits.
-            with args.request_timing_file.open("a", encoding="utf-8") as stream_file:
-                stream_file.write(json.dumps(record, ensure_ascii=False) + "\n")
-                stream_file.flush()
-        return response
+        return call_one(completion_args, completion_kwargs)
 
     litellm.completion = completion_without_cache
     litellm.cache = None
@@ -268,6 +324,87 @@ def main() -> None:
         model_config=config,
     )
 
+    if args.independent_samples:
+
+        def independent_call_api_parallel(
+            model_self,
+            prompts,
+            return_logits,
+            max_new_tokens,
+            num_samples,
+            stop_sequence=None,
+        ):
+            print(
+                f"Independent n=1 global queue: problems={len(prompts)}, "
+                f"http_concurrency={args.parallel}",
+                flush=True,
+            )
+            def expand(value, count):
+                return value if isinstance(value, list) else [value] * count
+
+            count = len(prompts)
+            return_logitss = expand(return_logits, count)
+            max_new_tokenss = expand(max_new_tokens, count)
+            num_sampless = expand(num_samples, count)
+            stop_sequencess = [stop_sequence] * count
+            jobs = []
+            for problem_index, fields in enumerate(
+                zip(
+                    prompts,
+                    return_logitss,
+                    max_new_tokenss,
+                    num_sampless,
+                    stop_sequencess,
+                )
+            ):
+                prompt, use_logits, max_tokens, samples, stops = fields
+                for sample_index in range(samples):
+                    jobs.append(
+                        (
+                            problem_index,
+                            sample_index,
+                            prompt,
+                            use_logits,
+                            max_tokens,
+                            stops,
+                        )
+                    )
+
+            def execute(job):
+                problem_index, sample_index, prompt, use_logits, max_tokens, stops = job
+                sample_context.sample_index = sample_index
+                try:
+                    response = getattr(
+                        model_self, "_LiteLLMClient__call_api"
+                    )(prompt, use_logits, max_tokens, 1, stops)
+                finally:
+                    sample_context.sample_index = None
+                return problem_index, sample_index, response
+
+            grouped = [[] for _ in prompts]
+            with ThreadPoolExecutor(max_workers=args.parallel) as executor:
+                for problem_index, sample_index, response in executor.map(execute, jobs):
+                    grouped[problem_index].append((sample_index, response))
+
+            combined = []
+            for problem_responses in grouped:
+                ordered = [
+                    response
+                    for _, response in sorted(
+                        problem_responses, key=lambda item: item[0]
+                    )
+                ]
+                combined.append(combine_independent_responses(ordered))
+            return combined
+
+        # Both methods use double-underscore names in LiteLLMClient, so assign
+        # the class-mangled attribute explicitly.
+        setattr(
+            type(pipeline.model),
+            "_LiteLLMClient__call_api_parallel",
+            independent_call_api_parallel,
+        )
+
     # Fail before the expensive generation if an environment accidentally
     # imports an unpatched task definition that falls back to n=1 or n=16.
     metric_names: list[str] = []
@@ -280,6 +417,7 @@ def main() -> None:
                 metric_names.append(name)
     expected_metrics = {
         "aime25_avg4": {"avg@n:n=4", "pass@k:k=4&n=4"},
+        "aime25_avg16": {"avg@n:n=16", "pass@k:k=16&n=16"},
         "math500_avg4": {"avg@n:n=4", "pass@k:k=4&n=4"},
         "gsm8k_avg4": {"avg@n:n=4", "pass@k:k=4&n=4"},
         "lcb": {"codegen_pass@1:avg4", "codegen_pass@4"},
@@ -312,13 +450,23 @@ def main() -> None:
     pipeline.evaluate()
     elapsed = time.perf_counter() - started
     results = pipeline.get_results()
-    if args.task in {"aime25_avg4", "math500_avg4", "gsm8k_avg4", "lcb"}:
+    if args.task in {
+        "aime25_avg4",
+        "aime25_avg16",
+        "math500_avg4",
+        "gsm8k_avg4",
+        "lcb",
+    }:
+        expected_timing_choices = 1 if args.independent_samples else 4
         bad_choice_counts = [
-            row["choice_count"] for row in timing_records if row["choice_count"] != 4
+            row["choice_count"]
+            for row in timing_records
+            if row["choice_count"] != expected_timing_choices
         ]
         if bad_choice_counts:
             raise RuntimeError(
-                "n=4 evaluation returned non-four-choice responses: "
+                "n=4 evaluation returned an unexpected per-request choice count "
+                f"(expected {expected_timing_choices}): "
                 f"{bad_choice_counts[:10]}"
             )
     pipeline.show_results()
@@ -334,6 +482,17 @@ def main() -> None:
             and row["request_end_s"] > row["request_start_s"]
         ]
         completion_tokens = sum(row["completion_tokens"] for row in timed_records)
+        per_sample_tokens = sorted(row["completion_tokens"] for row in timed_records)
+
+        def percentile(values: list[int], fraction: float) -> int | None:
+            if not values:
+                return None
+            index = round((len(values) - 1) * fraction)
+            return values[index]
+
+        length_finish_count = sum(
+            "length" in row.get("finish_reasons", []) for row in timed_records
+        )
         intervals = sorted(
             (row["request_start_s"], row["request_end_s"]) for row in timed_records
         )
@@ -353,8 +512,31 @@ def main() -> None:
             "includes_server_scheduling_and_ttft": True,
             "excludes_client_idle_outside_active_request_intervals": True,
             "request_count": len(ordered_records),
+            "logical_problem_count": (
+                len(ordered_records)
+                // (16 if args.task == "aime25_avg16" else 4)
+                if args.independent_samples
+                else len(ordered_records)
+            ),
+            "independent_sample_requests": args.independent_samples,
             "timed_request_count": len(timed_records),
             "completion_tokens": completion_tokens,
+            "per_sample_completion_tokens": {
+                "mean": (
+                    completion_tokens / len(per_sample_tokens)
+                    if per_sample_tokens
+                    else None
+                ),
+                "p50": percentile(per_sample_tokens, 0.50),
+                "p90": percentile(per_sample_tokens, 0.90),
+                "p95": percentile(per_sample_tokens, 0.95),
+                "p99": percentile(per_sample_tokens, 0.99),
+                "max": per_sample_tokens[-1] if per_sample_tokens else None,
+            },
+            "length_finish_count": length_finish_count,
+            "length_finish_rate": (
+                length_finish_count / len(timed_records) if timed_records else None
+            ),
             "evaluation_wall_sec": elapsed,
             "output_token_throughput": (
                 completion_tokens / elapsed if elapsed > 0 else None
@@ -389,6 +571,7 @@ def main() -> None:
         "generation_parameters": generation,
         "http_policy": {
             "parallel_requests": args.parallel,
+            "independent_sample_requests": args.independent_samples,
             "timeout_seconds": args.timeout,
             "max_retries_after_initial_attempt": args.max_retries,
             "litellm_num_retries": 0,
