@@ -132,6 +132,10 @@ def handle_speculative_decoding(server_args: ServerArgs) -> None:
 
 def _validate_csd(server_args: ServerArgs) -> None:
     if not server_args.speculative_csd_enabled:
+        if server_args.speculative_csd_rejection_trace:
+            raise ValueError(
+                "--speculative-csd-rejection-trace requires --speculative-csd."
+            )
         if server_args.speculative_csd_dynamic_update_ignore_prob_ratio:
             raise ValueError(
                 "--speculative-csd-dynamic-update-ignore-prob-ratio requires --speculative-csd."
@@ -146,6 +150,28 @@ def _validate_csd(server_args: ServerArgs) -> None:
         raise ValueError(
             "--speculative-csd currently supports DSPARK, DFLASH, and the MTP/EAGLE family."
         )
+    if server_args.speculative_csd_rejection_trace:
+        if not algorithm.is_eagle():
+            raise ValueError(
+                "--speculative-csd-rejection-trace currently supports only the MTP/EAGLE family."
+            )
+        if server_args.speculative_eagle_topk not in (None, 1):
+            raise ValueError(
+                "--speculative-csd-rejection-trace currently requires --speculative-eagle-topk 1."
+            )
+        if not server_args.speculative_csd_force_accept_disabled:
+            raise ValueError(
+                "--speculative-csd-rejection-trace requires --speculative-csd-force-accept-disabled "
+                "so tracing cannot alter the reference decoding path."
+            )
+        if not server_args.speculative_csd_rejection_trace_dir:
+            raise ValueError(
+                "--speculative-csd-rejection-trace-dir is required when rejection tracing is enabled."
+            )
+        if server_args.speculative_csd_rejection_trace_capacity <= 0:
+            raise ValueError(
+                "--speculative-csd-rejection-trace-capacity must be positive."
+            )
     if server_args.speculative_csd_freq_threshold < 1:
         raise ValueError("--speculative-csd-freq-threshold must be at least 1.")
     if not 0 < server_args.speculative_csd_prob_ratio <= 1:

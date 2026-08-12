@@ -498,6 +498,28 @@ def eagle_sample(
             ),
             csd_runtime=csd_runtime,
         )
+        if csd_runtime is not None and csd_runtime.rejection_trace is not None:
+            greedy_probs = F.softmax(
+                next_token_logits.reshape(bs, verify_input.draft_token_num, -1),
+                dim=-1,
+            )
+            csd_runtime.rejection_trace.record_mtp_rejections(
+                batch=batch,
+                candidates=candidates,
+                target_probs=greedy_probs,
+                target_logits=next_token_logits.reshape(
+                    bs, verify_input.draft_token_num, -1
+                ),
+                predict=predict,
+                accept_index=accept_index,
+                num_correct_drafts=num_correct_drafts,
+                table_counts=csd_runtime.table_store.counts,
+                freq_threshold=csd_runtime.freq_threshold,
+                prob_ratio=csd_runtime.prob_ratio,
+                entropy_min_threshold=csd_runtime.entropy_min_threshold,
+                entropy_max_threshold=csd_runtime.entropy_threshold,
+                entropy_basis="target_post_penalty_full_softmax",
+            )
     else:
         from sgl_kernel import (
             top_k_renorm_prob,
@@ -605,6 +627,25 @@ def eagle_sample(
             tp_group.broadcast(predict, src=0)
             tp_group.broadcast(accept_index, src=0)
             tp_group.broadcast(num_correct_drafts, src=0)
+
+        if csd_runtime is not None and csd_runtime.rejection_trace is not None:
+            csd_runtime.rejection_trace.record_mtp_rejections(
+                batch=batch,
+                candidates=candidates,
+                target_probs=target_probs,
+                target_logits=next_token_logits.reshape(
+                    bs, verify_input.draft_token_num, -1
+                ),
+                predict=predict,
+                accept_index=accept_index,
+                num_correct_drafts=num_correct_drafts,
+                table_counts=csd_runtime.table_store.counts,
+                freq_threshold=csd_runtime.freq_threshold,
+                prob_ratio=csd_runtime.prob_ratio,
+                entropy_min_threshold=csd_runtime.entropy_min_threshold,
+                entropy_max_threshold=csd_runtime.entropy_threshold,
+                entropy_basis="target_post_temperature_top_k_top_p",
+            )
 
     if SIMULATE_ACC_LEN > 0:
         # Do simulation. The helper builds (and returns) a replacement

@@ -1612,6 +1612,18 @@ class ServerArgs:
         float,
         "Allow CSD force acceptance only when target entropy is at least this value; -1 disables the lower-bound entropy gate.",
     ] = -1.0
+    speculative_csd_rejection_trace: A[
+        bool,
+        "Record every MTP/EAGLE topk=1 verifier rejection without changing the decoding path.",
+    ] = False
+    speculative_csd_rejection_trace_dir: A[
+        Optional[str],
+        "Output directory for MTP/EAGLE CSD rejection request and event JSONL files.",
+    ] = None
+    speculative_csd_rejection_trace_capacity: A[
+        int,
+        "Maximum number of rejection records waiting for the background JSONL writer.",
+    ] = 65536
     speculative_use_rejection_sampling: A[
         bool,
         "Use rejection sampling for speculative decoding (requires topk=1).",

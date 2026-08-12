@@ -1002,6 +1002,58 @@ class TestCSDArgs(CustomTestCase):
                 )
             )
 
+    def test_rejection_trace_requires_reference_mode_and_output_dir(self):
+        with self.assertRaisesRegex(ValueError, "force-accept-disabled"):
+            _validate_csd(
+                self._make_args(
+                    "EAGLE",
+                    speculative_csd_rejection_trace=True,
+                    speculative_csd_rejection_trace_dir="/tmp/trace",
+                    speculative_eagle_topk=1,
+                )
+            )
+        with self.assertRaisesRegex(ValueError, "trace-dir"):
+            _validate_csd(
+                self._make_args(
+                    "EAGLE",
+                    speculative_csd_rejection_trace=True,
+                    speculative_csd_force_accept_disabled=True,
+                    speculative_eagle_topk=1,
+                )
+            )
+
+    def test_rejection_trace_is_mtp_topk1_only(self):
+        common = dict(
+            speculative_csd_rejection_trace=True,
+            speculative_csd_rejection_trace_dir="/tmp/trace",
+            speculative_csd_force_accept_disabled=True,
+        )
+        with self.assertRaisesRegex(ValueError, "MTP/EAGLE"):
+            _validate_csd(self._make_args("DSPARK", **common))
+        with self.assertRaisesRegex(ValueError, "topk 1"):
+            _validate_csd(
+                self._make_args("EAGLE", speculative_eagle_topk=2, **common)
+            )
+        _validate_csd(self._make_args("EAGLE", speculative_eagle_topk=1, **common))
+
+    def test_rejection_trace_cli_flags_round_trip(self):
+        parser = server_args_module.argparse.ArgumentParser()
+        ServerArgs.add_cli_args(parser)
+        parsed = parser.parse_args(
+            [
+                "--model-path",
+                "dummy",
+                "--speculative-csd-rejection-trace",
+                "--speculative-csd-rejection-trace-dir",
+                "/tmp/trace",
+                "--speculative-csd-rejection-trace-capacity",
+                "1234",
+            ]
+        )
+        self.assertTrue(parsed.speculative_csd_rejection_trace)
+        self.assertEqual(parsed.speculative_csd_rejection_trace_dir, "/tmp/trace")
+        self.assertEqual(parsed.speculative_csd_rejection_trace_capacity, 1234)
+
 
 class TestDecoupledSpecArgs(CustomTestCase):
     """Decoupled speculative-decoding CLI flags.

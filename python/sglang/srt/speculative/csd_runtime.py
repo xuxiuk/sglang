@@ -318,6 +318,7 @@ class CSDRuntime:
     aggregate_across_dp: bool = False
     dp_aggregate_started_ct: int = 0
     dp_aggregate_pair_ct: int = 0
+    rejection_trace: Optional[Any] = None
 
     @classmethod
     def from_server_args(cls, server_args: "ServerArgs", device) -> "CSDRuntime":
@@ -361,7 +362,7 @@ class CSDRuntime:
                 )
             except (AttributeError, RuntimeError):
                 native_builder = None
-        return cls(
+        runtime = cls(
             enabled=True,
             dynamic_update=server_args.speculative_csd_dynamic_update,
             dynamic_update_ignore_prob_ratio=(
@@ -394,6 +395,24 @@ class CSDRuntime:
                 and int(server_args.dp_size) > 1
             ),
         )
+        if server_args.speculative_csd_rejection_trace:
+            from sglang.srt.distributed import get_attn_tp_group, get_tp_group
+            from sglang.srt.speculative.csd_rejection_trace import (
+                CSDRejectionTraceWriter,
+            )
+
+            group = (
+                get_attn_tp_group()
+                if bool(server_args.enable_dp_attention)
+                else get_tp_group()
+            )
+            # One writer per independent attention lane.  TP replicas would
+            # otherwise emit identical rejection records.
+            if group.rank_in_group == 0:
+                runtime.rejection_trace = CSDRejectionTraceWriter.from_server_args(
+                    server_args, rank=int(get_tp_group().rank)
+                )
+        return runtime
 
     @property
     def has_table(self) -> bool:
@@ -417,6 +436,12 @@ class CSDRuntime:
                 "csd_entropy_max_threshold": self.entropy_threshold,
             }
         )
+        if self.rejection_trace is not None:
+            # /server_info is the experiment boundary used by the evaluation
+            # scripts.  Drain the background writer here so its counters and
+            # JSONL files describe the same completed prefix of execution.
+            self.rejection_trace.flush()
+            result.update(self.rejection_trace.snapshot())
         return result
 
     def _dp_rebuild_input(self) -> Optional[torch.Tensor]:
