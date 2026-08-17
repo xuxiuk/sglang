@@ -65,6 +65,7 @@ def parse_args():
     parser.add_argument("--data-parallel-size", type=int, default=1)
     parser.add_argument("--mem-fraction-static", type=float, default=0.8)
     parser.add_argument("--max-running-requests", type=int, default=None)
+    parser.add_argument("--skip-server-warmup", action="store_true")
     parser.add_argument("--watchdog-timeout", type=int, default=None)
     parser.add_argument("--mamba-scheduler-strategy", default=None)
     parser.add_argument("--log-level", default=None)
@@ -91,10 +92,21 @@ def parse_args():
     parser.add_argument("--system-prompt", default=None)
     parser.add_argument("--gen-kwargs", default=None)
     parser.add_argument("--save-details", action="store_true")
+    parser.add_argument(
+        "--generation-only",
+        action="store_true",
+        help="Run model generation without task metric computation.",
+    )
     parser.add_argument("--disable-sample-cache", action="store_true")
     parser.add_argument("--dataset-loading-processes", type=int, default=1)
     parser.add_argument("--custom-tasks", default=None)
     parser.add_argument("--num-fewshot-seeds", type=int, default=1)
+    parser.add_argument(
+        "--force-num-samples",
+        type=int,
+        default=None,
+        help="Override each selected document to generate exactly this many trajectories.",
+    )
     parser.add_argument("--remove-reasoning-tags", action="store_true", default=True)
     parser.add_argument(
         "--keep-reasoning-tags", dest="remove_reasoning_tags", action="store_false"
@@ -132,6 +144,11 @@ def parse_args():
     parser.add_argument("--csd-dynamic-update", action="store_true")
     parser.add_argument("--csd-dynamic-update-ignore-prob-ratio", action="store_true")
     parser.add_argument("--csd-force-accept-disabled", action="store_true")
+    parser.add_argument("--csd-rejection-trace", action="store_true")
+    parser.add_argument("--csd-rejection-trace-dir", default=None)
+    parser.add_argument(
+        "--csd-rejection-trace-capacity", type=int, default=65536
+    )
     parser.add_argument("--csd-enabled", action="store_true")
     return parser.parse_args()
 
@@ -249,6 +266,9 @@ def _server_config(args):
         "speculative_csd_prob_ratio": args.csd_prob_ratio,
         "speculative_csd_force_accept_entropy_threshold": args.csd_force_accept_entropy_threshold,
         "speculative_csd_force_accept_entropy_min_threshold": args.csd_force_accept_entropy_min_threshold,
+        "speculative_csd_rejection_trace": args.csd_rejection_trace,
+        "speculative_csd_rejection_trace_dir": args.csd_rejection_trace_dir,
+        "speculative_csd_rejection_trace_capacity": args.csd_rejection_trace_capacity,
         "speculative_csd_rebuild_top_keep": args.csd_rebuild_top_keep,
         "speculative_csd_rebuild_threshold": args.csd_rebuild_threshold,
         "port": args.port,
@@ -452,6 +472,7 @@ def _build_model_config(args):
         attention_backend=args.attention_backend,
         mem_fraction_static=args.mem_fraction_static,
         max_running_requests=args.max_running_requests,
+        skip_server_warmup=args.skip_server_warmup,
         chunked_prefill_size=args.chunked_prefill_size,
         watchdog_timeout=args.watchdog_timeout,
         mamba_scheduler_strategy=args.mamba_scheduler_strategy,
@@ -483,11 +504,22 @@ def _build_model_config(args):
         speculative_csd_dynamic_update=args.csd_dynamic_update,
         speculative_csd_dynamic_update_ignore_prob_ratio=args.csd_dynamic_update_ignore_prob_ratio,
         speculative_csd_force_accept_disabled=args.csd_force_accept_disabled,
+        speculative_csd_rejection_trace=args.csd_rejection_trace,
+        speculative_csd_rejection_trace_dir=args.csd_rejection_trace_dir,
+        speculative_csd_rejection_trace_capacity=args.csd_rejection_trace_capacity,
         speculative_csd_save_table_path=args.csd_save_table_path,
         speculative_csd_save_table_metadata=(
             _run_config(args) if args.csd_save_table_path else None
         ),
     )
+
+
+def _flush_and_validate_rejection_trace(pipeline):
+    """Return counters captured by model cleanup before Engine shutdown."""
+    metrics = getattr(pipeline.model, "rejection_trace_finalization", None)
+    if not metrics:
+        raise RuntimeError("CSD rejection trace finalization counters are missing")
+    return metrics
 
 
 def main():
@@ -528,11 +560,36 @@ def main():
         evaluation_tracker=evaluation_tracker,
         model_config=model_config,
     )
+    if args.force_num_samples is not None:
+        if args.force_num_samples <= 0:
+            raise ValueError("--force-num-samples must be positive")
+        for task in pipeline.tasks_dict.values():
+            task.num_samples = [args.force_num_samples]
+        for docs in pipeline.documents_dict.values():
+            for doc in docs:
+                doc.num_samples = args.force_num_samples
 
     start_time = time.perf_counter()
-    pipeline.evaluate()
+    if args.generation_only:
+        pipeline._run_model()
+    else:
+        pipeline.evaluate()
     elapsed = time.perf_counter() - start_time
-    results = pipeline.get_results()
+    trace_finalization = (
+        _flush_and_validate_rejection_trace(pipeline)
+        if args.csd_rejection_trace
+        else None
+    )
+    results = (
+        {
+            "generation_only": True,
+            "tasks": args.tasks,
+            "max_samples": args.limit,
+            "num_samples_per_document": args.force_num_samples,
+        }
+        if args.generation_only
+        else pipeline.get_results()
+    )
 
     spec_summary = pipeline.model.get_spec_metrics()
     if spec_summary is not None:
@@ -572,6 +629,7 @@ def main():
             "server_config": server_config,
             "performance": performance,
             "speculative_metrics": spec_summary,
+            "rejection_trace_finalization": trace_finalization,
         }
     )
 

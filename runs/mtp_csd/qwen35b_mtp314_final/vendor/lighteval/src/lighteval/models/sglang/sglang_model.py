@@ -40,6 +40,20 @@ from lighteval.utils.imports import is_package_available, requires
 
 logger = logging.getLogger(__name__)
 
+
+def _collect_named_dicts(value, key):
+    found = []
+    if isinstance(value, dict):
+        candidate = value.get(key)
+        if isinstance(candidate, dict):
+            found.append(candidate)
+        for child in value.values():
+            found.extend(_collect_named_dicts(child, key))
+    elif isinstance(value, (list, tuple)):
+        for child in value:
+            found.extend(_collect_named_dicts(child, key))
+    return found
+
 if is_package_available("sglang"):
     from sglang import Engine
 
@@ -141,6 +155,7 @@ class SGLangModelConfig(ModelConfig):
     attention_backend: str | None = None
     mem_fraction_static: PositiveFloat = 0.8
     max_running_requests: PositiveInt | None = None
+    skip_server_warmup: bool = False
     chunked_prefill_size: PositiveInt = 4096
     watchdog_timeout: PositiveFloat | None = None
     mamba_scheduler_strategy: str | None = None
@@ -168,6 +183,9 @@ class SGLangModelConfig(ModelConfig):
     speculative_csd_dynamic_update: bool = False
     speculative_csd_dynamic_update_ignore_prob_ratio: bool = False
     speculative_csd_force_accept_disabled: bool = False
+    speculative_csd_rejection_trace: bool = False
+    speculative_csd_rejection_trace_dir: str | None = None
+    speculative_csd_rejection_trace_capacity: PositiveInt = 65536
     speculative_csd_save_table_path: str | None = None
     speculative_csd_save_table_metadata: dict[str, Any] | None = None
 
@@ -202,6 +220,7 @@ class SGLangModel(LightevalModel):
             collect=config.collect_spec_metrics,
             speculative_num_steps=config.speculative_num_steps,
         )
+        self.rejection_trace_finalization = None
         self.prompt_manager = PromptManager(
             self.use_chat_template,
             self.tokenizer,
@@ -219,6 +238,40 @@ class SGLangModel(LightevalModel):
     def cleanup(self):
         if self.model is not None:
             try:
+                if self.config.speculative_csd_rejection_trace:
+                    server_info = self.model.get_server_info()
+                    metrics = _collect_named_dicts(server_info, "csd_metrics")
+                    trace_metrics = [
+                        item
+                        for item in metrics
+                        if "csd_trace_recorded_ct" in item
+                    ]
+                    if not trace_metrics:
+                        raise RuntimeError(
+                            "CSD rejection trace is enabled, but no final trace "
+                            "counters were returned"
+                        )
+                    failures = []
+                    for index, item in enumerate(trace_metrics):
+                        recorded = int(item.get("csd_trace_recorded_ct", -1))
+                        flushed = int(item.get("csd_trace_flushed_ct", -1))
+                        dropped = int(item.get("csd_trace_dropped_ct", -1))
+                        pending = int(item.get("csd_trace_buffer_pending", -1))
+                        if pending != 0 or recorded != flushed or dropped != 0:
+                            failures.append(
+                                {
+                                    "writer_index": index,
+                                    "recorded": recorded,
+                                    "flushed": flushed,
+                                    "dropped": dropped,
+                                    "pending": pending,
+                                }
+                            )
+                    if failures:
+                        raise RuntimeError(
+                            f"CSD rejection trace did not finalize cleanly: {failures}"
+                        )
+                    self.rejection_trace_finalization = trace_metrics
                 if self.config.speculative_csd_save_table_path:
                     self.save_csd_table(
                         self.config.speculative_csd_save_table_path,
@@ -254,6 +307,7 @@ class SGLangModel(LightevalModel):
             "attention_backend": config.attention_backend,
             "mem_fraction_static": config.mem_fraction_static,
             "max_running_requests": config.max_running_requests,
+            "skip_server_warmup": config.skip_server_warmup,
             "schedule_policy": "fcfs",
             "chunked_prefill_size": config.chunked_prefill_size,
             "disable_radix_cache": True,
@@ -290,6 +344,14 @@ class SGLangModel(LightevalModel):
             self.model_args["speculative_csd_dynamic_update_ignore_prob_ratio"] = True
         if config.speculative_csd_force_accept_disabled:
             self.model_args["speculative_csd_force_accept_disabled"] = True
+        if config.speculative_csd_rejection_trace:
+            self.model_args["speculative_csd_rejection_trace"] = True
+            self.model_args["speculative_csd_rejection_trace_dir"] = (
+                config.speculative_csd_rejection_trace_dir
+            )
+            self.model_args["speculative_csd_rejection_trace_capacity"] = (
+                config.speculative_csd_rejection_trace_capacity
+            )
         model = Engine(**self.model_args)
 
         if self._max_length is None:
