@@ -1561,6 +1561,57 @@ class ServerArgs:
         float,
         "The accept probability of a draft token is raised from its target probability p to min(1, p / threshold_acc).",
     ] = 1.0
+    speculative_csd_enabled: A[
+        bool,
+        Arg(
+            help="Enable CSD-enhanced speculative verification for DSpark, DFlash, or MTP/EAGLE. All backends share the frequency table, online rebuild, metrics, and entropy gate.",
+            aliases=["--speculative-csd"],
+        ),
+    ] = False
+    speculative_csd_table_path: A[
+        Optional[str],
+        "Optional CSD pair-frequency table. Dynamic collection may start from an empty table when omitted.",
+    ] = None
+    speculative_csd_freq_threshold: A[
+        int,
+        "Minimum observed pair frequency required for CSD table admission.",
+    ] = 6
+    speculative_csd_prob_ratio: A[
+        float,
+        "Minimum target probability ratio p(draft) / p(residual) for CSD force acceptance.",
+    ] = 0.01
+    speculative_csd_dynamic_update: A[
+        bool,
+        "Collect rejected draft/residual pairs and rebuild the CSD table online.",
+    ] = False
+    speculative_csd_dynamic_update_ignore_prob_ratio: A[
+        bool,
+        "Collect dynamic pairs without the probability-ratio gate; force acceptance still uses the gate.",
+    ] = False
+    speculative_csd_delta_save_path: A[
+        Optional[str],
+        "Optional path used when explicitly exporting dynamically collected CSD pairs.",
+    ] = None
+    speculative_csd_delta_capacity: A[
+        Optional[int],
+        "Maximum number of CSD pair observations buffered on GPU.",
+    ] = None
+    speculative_csd_rebuild_threshold: A[
+        int,
+        "Buffered pair count that triggers an asynchronous CSD table rebuild; <=0 disables online rebuild.",
+    ] = 4096
+    speculative_csd_force_accept_disabled: A[
+        bool,
+        "Collect and rebuild CSD state without changing speculative acceptance decisions.",
+    ] = False
+    speculative_csd_force_accept_entropy_threshold: A[
+        float,
+        "Allow CSD force acceptance only when target entropy is at most this value; -1 disables the entropy gate.",
+    ] = -1.0
+    speculative_csd_force_accept_entropy_min_threshold: A[
+        float,
+        "Allow CSD force acceptance only when target entropy is at least this value; -1 disables the lower-bound entropy gate.",
+    ] = -1.0
     speculative_use_rejection_sampling: A[
         bool,
         "Use rejection sampling for speculative decoding (requires topk=1).",

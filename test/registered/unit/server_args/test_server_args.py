@@ -7,7 +7,10 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import sglang.srt.server_args as server_args_module
-from sglang.srt.arg_groups.speculative_hook import handle_speculative_decoding
+from sglang.srt.arg_groups.speculative_hook import (
+    _validate_csd,
+    handle_speculative_decoding,
+)
 from sglang.srt.layers.cp.base import is_cp_enabled, is_interleave
 from sglang.srt.model_executor.cuda_graph_config import (
     Backend,
@@ -963,6 +966,41 @@ class TestNgramExternalSamArgs(CustomTestCase):
         with self.assertRaises(ValueError) as context:
             handle_speculative_decoding(args)
         self.assertIn("external-corpus-max-tokens", str(context.exception))
+
+
+class TestCSDArgs(CustomTestCase):
+    def _make_args(self, algorithm: str, **overrides):
+        args = ServerArgs(model_path="dummy")
+        args.speculative_algorithm = algorithm
+        args.speculative_csd_enabled = True
+        args.speculative_csd_table_path = "/tmp/csd-table.json"
+        args.device = "cuda"
+        for key, value in overrides.items():
+            setattr(args, key, value)
+        return args
+
+    def test_accepts_dspark_dflash_and_mtp_family(self):
+        for algorithm in ("DSPARK", "DFLASH", "EAGLE", "EAGLE3", "FROZEN_KV_MTP"):
+            with self.subTest(algorithm=algorithm):
+                _validate_csd(self._make_args(algorithm))
+
+    def test_rejects_unsupported_algorithm(self):
+        with self.assertRaisesRegex(ValueError, "DSPARK.*DFLASH.*MTP/EAGLE"):
+            _validate_csd(self._make_args("NGRAM"))
+
+    def test_requires_cuda(self):
+        with self.assertRaisesRegex(ValueError, "only supports CUDA"):
+            _validate_csd(self._make_args("EAGLE", device="cpu"))
+
+    def test_requires_table_or_dynamic_update(self):
+        with self.assertRaisesRegex(ValueError, "table path"):
+            _validate_csd(
+                self._make_args(
+                    "EAGLE",
+                    speculative_csd_table_path=None,
+                    speculative_csd_dynamic_update=False,
+                )
+            )
 
 
 class TestDecoupledSpecArgs(CustomTestCase):

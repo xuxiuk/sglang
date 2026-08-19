@@ -3734,14 +3734,24 @@ class Scheduler(
         }
         ret["effective_max_running_requests_per_dp"] = self.max_running_requests
 
-        if (
-            not self.spec_algorithm.is_none()
-            and self.metrics_reporter.spec_total_num_forward_ct > 0
-        ):
-            ret["avg_spec_accept_length"] = (
+        if not self.spec_algorithm.is_none():
+            # Include the current decode-log window as well as the committed
+            # lifetime counters. A task can finish between periodic log
+            # boundaries, and /server_info must still report its exact totals.
+            spec_total_num_accept_tokens = (
                 self.metrics_reporter.spec_total_num_accept_tokens
-                / self.metrics_reporter.spec_total_num_forward_ct
+                + self.metrics_reporter.spec_num_accept_tokens
             )
+            spec_total_num_forward_ct = (
+                self.metrics_reporter.spec_total_num_forward_ct
+                + self.metrics_reporter.spec_num_forward_ct
+            )
+            ret["spec_total_num_accept_tokens"] = spec_total_num_accept_tokens
+            ret["spec_total_num_forward_ct"] = spec_total_num_forward_ct
+            if spec_total_num_forward_ct > 0:
+                ret["avg_spec_accept_length"] = (
+                    spec_total_num_accept_tokens / spec_total_num_forward_ct
+                )
 
         if RECORD_STEP_TIME:
             ret["step_time_dict"] = self.metrics_reporter.step_time_dict
@@ -3753,6 +3763,11 @@ class Scheduler(
             info_record = self.draft_worker.dump_info_records()
             if info_record is not None:
                 ret["dspark_info_record"] = info_record
+
+        if self.draft_worker is not None:
+            csd_runtime = getattr(self.draft_worker, "csd_runtime", None)
+            if csd_runtime is not None and csd_runtime.enabled:
+                ret["csd_metrics"] = csd_runtime.metrics_snapshot()
 
         # This field is not serializable.
         ret.pop("model_config", None)
