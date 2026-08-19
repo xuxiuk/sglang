@@ -645,10 +645,13 @@ class DeepseekV4AttnBackend(
         ] = None
         self.online_c128_mtp = OnlineC128MTPController(self)
 
+        self.is_dspark = bool(
+            model_runner.spec_algorithm is not None
+            and model_runner.spec_algorithm.is_dspark()
+        )
         self.is_dspark_draft = bool(
             getattr(model_runner, "is_draft_worker", False)
-            and model_runner.spec_algorithm is not None
-            and model_runner.spec_algorithm.is_dspark()
+            and self.is_dspark
         )
 
     def _move_to_device(self, x: List[int]) -> torch.Tensor:
@@ -838,6 +841,11 @@ class DeepseekV4AttnBackend(
                         extend_lens_cpu=None,
                         use_prefill_cuda_graph=True,
                         num_q_tokens=out_cache_loc.shape[0],
+                        verify_width=(
+                            self.speculative_num_draft_tokens
+                            if self.is_dspark
+                            else 0
+                        ),
                         online_state_slot_offset=online_c128_state_slot_offset,
                     )
                 return create_paged_compressor_data(
@@ -851,6 +859,9 @@ class DeepseekV4AttnBackend(
                     extend_lens=extend_seq_lens,
                     extend_lens_cpu=extend_seq_lens_cpu,
                     use_prefill_cuda_graph=use_graph_plan,
+                    verify_width=(
+                        self.speculative_num_draft_tokens if self.is_dspark else 0
+                    ),
                     online_state_slot_offset=online_c128_state_slot_offset,
                 )
 
